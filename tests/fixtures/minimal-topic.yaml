@@ -1,0 +1,5 @@
+version: "1.0"
+session:
+  topic: "Minimal test"
+participant_1: "user-a"
+participant_2: "user-b"

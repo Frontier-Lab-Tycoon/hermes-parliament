@@ -1,0 +1,20 @@
+version: "1.0"
+session:
+  topic: "Valid test topic"
+  objective: "Test objective"
+  max_turns: 8
+protocol:
+  type: "debate"
+  ordering: "alternating"
+  termination:
+    max_turns: 8
+    min_turns: 2
+    early_stop: true
+synthesis:
+  enabled: true
+  profile: "coordinator"
+discord:
+  coordinator_bot_token: "static-token"
+  publish_mode: "per_turn"
+participant_1: "user-a"
+participant_2: "user-b"

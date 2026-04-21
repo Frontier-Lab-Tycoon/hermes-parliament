@@ -1,0 +1,5 @@
+version: "1.0"
+session:
+  topic: "Test"
+participant_1: "same-bot"
+participant_2: "same-bot"
