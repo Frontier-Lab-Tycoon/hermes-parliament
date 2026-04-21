@@ -104,6 +104,12 @@ class SessionStore:
         with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
+    def append_raw(self, session_id: str, record: dict[str, Any]) -> None:
+        """Append a raw JSON record to history.jsonl."""
+        path = self._history_path(session_id)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
     def generate_nonce(self, session_id: str, turn_uuid: str, publisher_identity: str) -> str:
         """Deterministic 25-character nonce hash."""
         raw = f"{session_id}:{turn_uuid}:{publisher_identity}".encode("utf-8")
