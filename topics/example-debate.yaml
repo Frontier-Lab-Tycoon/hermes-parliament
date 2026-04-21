@@ -1,0 +1,63 @@
+# parliament topic configuration v1
+version: "1.0"
+session:
+  id: "auto"
+  topic: "스타트업 초기 아키텍처: 모놀리스 vs 마이크로서비스"
+  objective: "참가자들이 합의를 이루거나 최대 턴까지 대화를 나눈 뒤 최종 결론 도출"
+  max_turns: 10
+
+protocol:
+  type: "debate"
+  ordering: "alternating"
+
+  termination:
+    max_turns: 10
+    min_turns: 2
+    early_stop: true
+
+synthesis:
+  enabled: true
+  profile: "coordinator"
+  prompt: |
+    아래 토론 내용을 바탕으로 최종 결론을 JSON 형식으로 정리하세요.
+  output:
+    format: "json"
+    schema:
+      type: object
+      properties:
+        decision:
+          type: string
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        reasoning:
+          type: string
+        consensus_reached:
+          type: boolean
+      required: ["decision", "confidence", "reasoning", "consensus_reached"]
+
+discord:
+  coordinator_bot_token: "${COORDINATOR_BOT_TOKEN}"
+  publish_mode: "per_turn"
+
+  templates:
+    turn: |
+      **🎙️ 턴 {turn_id}**
+      ─────────────────────
+      {content}
+    final: |
+      **📊 최종 결론**
+      ```json
+      {structured}
+      ```
+
+  embed:
+    color_by_profile: true
+    show_timestamp: true
+
+extensions:
+  shared_scratchpad: false
+  tool_sharing: false
+  judge_profile: null
+  enable_flows: false
