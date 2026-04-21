@@ -1,0 +1,11 @@
+version: "1.0"
+session:
+  topic: "Test"
+protocol:
+  type: "debate"
+  ordering: "alternating"
+  termination:
+    max_turns: 1
+    min_turns: 2
+participant_1: "123"
+participant_2: "456"

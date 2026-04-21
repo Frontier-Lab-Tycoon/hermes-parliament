@@ -1,0 +1,7 @@
+profiles:
+  definitely-nonexistent-profile-xyz:
+    hermes_profile: "definitely-nonexistent-profile-xyz"
+    discord_bot_token: "some-token"
+    discord_user_id: "999"
+coordinator:
+  bot_token: "coord-token"

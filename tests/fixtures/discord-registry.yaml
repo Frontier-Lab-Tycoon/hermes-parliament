@@ -1,0 +1,9 @@
+profiles:
+  architect-devil:
+    hermes_profile: "architect-devil"
+    discord_bot_token: "${DEVIL_BOT_TOKEN}"
+    discord_user_id: "123456789"
+    discord_name: "악마의 대변인"
+coordinator:
+  bot_token: "${COORDINATOR_BOT_TOKEN}"
+  application_id: "app-123"
