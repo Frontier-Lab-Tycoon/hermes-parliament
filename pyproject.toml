@@ -27,6 +27,7 @@ packages = ["parliament"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    "aioresponses>=0.7",
 ]
 
 [tool.pytest.ini_options]

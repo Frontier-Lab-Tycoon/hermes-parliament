@@ -57,6 +57,14 @@ class DiscordRegistry:
             )
         return self._profiles[discord_user_id]
 
+    def resolve_by_hermes_profile(self, hermes_profile: str) -> HermesProfile:
+        for profile in self._profiles.values():
+            if profile.hermes_profile == hermes_profile:
+                return profile
+        raise KeyError(
+            f"No profile found for hermes profile: {hermes_profile}"
+        )
+
 
 def load_registry(path: str) -> DiscordRegistry:
     raw_data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
