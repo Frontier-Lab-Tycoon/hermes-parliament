@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class PublishState(str, Enum):
@@ -70,3 +70,26 @@ class BackendResult(BaseModel):
     text: str
     code: int
     error: str | None = None
+
+
+class SynthesisResult(BaseModel):
+    """Result of the synthesis step."""
+
+    decision: str
+    confidence: float
+    reasoning: str
+    consensus_reached: bool
+    disagreeing_profiles: list[str] | None = None
+    structured: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _sync_structured(self) -> "SynthesisResult":
+        self.structured = {
+            "decision": self.decision,
+            "confidence": self.confidence,
+            "reasoning": self.reasoning,
+            "consensus_reached": self.consensus_reached,
+        }
+        if self.disagreeing_profiles is not None:
+            self.structured["disagreeing_profiles"] = self.disagreeing_profiles
+        return self
