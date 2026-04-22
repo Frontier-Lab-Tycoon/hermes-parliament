@@ -8,10 +8,10 @@ from typing import Any
 
 import aiohttp
 
-from parliament.discord_registry import DiscordRegistry
+from parliament.integrations.discord.registry import DiscordRegistry
 from parliament.models import TurnRecord
-from parliament.publishers.base import Publisher
-from parliament.session import SessionStore
+from parliament.integrations.base import Publisher
+from parliament.sessions.store import SessionStore
 
 
 class DiscordPublisher(Publisher):

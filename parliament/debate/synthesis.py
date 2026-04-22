@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from parliament.backends.base import AgentBackend
+from parliament.agents.base import AgentBackend
 from parliament.models import BackendResult, SynthesisResult, TurnRecord
 
 _JSON_BLOCK_RE = re.compile(r"```json\s*(.*?)\s*```", re.DOTALL)

@@ -10,10 +10,10 @@ from typing import Any
 import discord
 from discord import app_commands
 
-from parliament.config import ProtocolConfig, TerminationConfig, TopicConfig, load_topic
-from parliament.discord_registry import DiscordRegistry, load_registry
-from parliament.index import GlobalIndex
-from parliament.session import SessionStore
+from parliament.topics.config import ProtocolConfig, TerminationConfig, TopicConfig, load_topic
+from parliament.integrations.discord.registry import DiscordRegistry, load_registry
+from parliament.sessions.index import GlobalIndex
+from parliament.sessions.store import SessionStore
 
 
 async def _run_parliament_handler(
@@ -86,7 +86,7 @@ async def _run_parliament_handler(
     )
 
     # Start background task
-    from parliament.engine import DebateEngine
+    from parliament.debate.engine import DebateEngine
 
     engine = DebateEngine(store)
     asyncio.create_task(engine.run(session_id))

@@ -1,4 +1,4 @@
-"""Abstract base class for publishers."""
+"""Abstract base class for external publisher integrations."""
 
 from __future__ import annotations
 

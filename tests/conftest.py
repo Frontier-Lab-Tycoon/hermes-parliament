@@ -9,11 +9,12 @@ from typing import Any
 import pytest
 from aioresponses import CallbackResult, aioresponses
 
-from parliament.backends.base import AgentBackend
-from parliament.discord_registry import DiscordRegistry, HermesProfile
-from parliament.index import GlobalIndex
+from parliament.agents.base import AgentBackend
+from parliament.integrations.discord.registry import DiscordRegistry, HermesProfile
+from parliament.integrations.discord.publisher import DiscordPublisher
+from parliament.sessions.index import GlobalIndex
 from parliament.models import BackendResult
-from parliament.session import SessionStore
+from parliament.sessions.store import SessionStore
 
 
 @pytest.fixture
@@ -68,7 +69,7 @@ class MockBackend(AgentBackend):
 
     async def invoke(self, profile: str, prompt: str, timeout: int = 120) -> BackendResult:
         if self.timeout_profile and profile == self.timeout_profile:
-            from parliament.backends.base import BackendTimeoutError
+            from parliament.agents.base import BackendTimeoutError
             raise BackendTimeoutError("timed out")
         text = self.responses[self.index % len(self.responses)]
         self.index += 1

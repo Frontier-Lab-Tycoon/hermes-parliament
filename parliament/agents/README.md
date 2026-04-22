@@ -1,4 +1,4 @@
-# backends
+# agents
 
 Agent 백엔드 추상화 및 Hermes CLI 구현체.
 

@@ -10,12 +10,12 @@ from typing import Any
 import pytest
 from aioresponses import CallbackResult
 
-from parliament.config import ProtocolConfig, TerminationConfig, TopicConfig
-from parliament.discord_registry import DiscordRegistry
-from parliament.engine import DebateEngine
+from parliament.topics.config import ProtocolConfig, TerminationConfig, TopicConfig
+from parliament.integrations.discord.registry import DiscordRegistry
+from parliament.debate.engine import DebateEngine
 from parliament.models import TurnRecord
-from parliament.publishers.discord import DiscordPublisher
-from parliament.session import SessionStore
+from parliament.integrations.discord.publisher import DiscordPublisher
+from parliament.sessions.store import SessionStore
 
 from tests.conftest import MockBackend, register_all_discord_posts
 

@@ -34,8 +34,8 @@ def list() -> None:
 )
 def run_bot(registry: str | None, topic: str | None) -> None:
     """Start the Discord coordinator bot."""
-    from parliament.discord_bot import ParliamentBot
-    from parliament.discord_registry import load_registry
+    from parliament.integrations.discord.bot import ParliamentBot
+    from parliament.integrations.discord.registry import load_registry
 
     registry_path = registry or str(
         Path.home() / ".parliament" / "discord-registry.yaml"

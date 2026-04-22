@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from parliament.backends.hermes import HermesBackend
+from parliament.agents.hermes import HermesBackend
 
 BACKENDS: dict[str, type[HermesBackend]] = {
     "hermes": HermesBackend,

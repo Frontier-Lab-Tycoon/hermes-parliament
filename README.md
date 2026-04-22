@@ -53,20 +53,14 @@ Discord 기반 다중 AI 에이전트 토론 오케스트레이터. 두 명의 H
 
 ```
 parliament/
-├── models.py           # Pydantic 모델 (TurnRecord, DeliveryEvent, ...)
-├── session.py          # 파일 기반 SessionStore (append-only JSONL)
-├── index.py            # SQLite 글로벌 세션 인덱스
-├── config.py           # YAML TopicConfig 파싱 및 검증
-├── discord_registry.py # Discord User ID → Hermes Profile 매핑
-├── engine.py           # DebateEngine (turn loop, termination)
-├── context.py          # ContextAssembler + Summarizer
-├── synthesis.py        # Synthesizer (최종 JSON 생성)
+├── agents/             # AgentBackend 인터페이스와 Hermes CLI 구현체
+├── debate/             # DebateEngine, ContextAssembler, Synthesizer
+├── integrations/       # Publisher 인터페이스와 Discord 연동 구현체
+├── sessions/           # SessionStore, append-only logs, SQLite index
+├── topics/             # YAML TopicConfig 파싱 및 검증
+├── models.py           # 공용 Pydantic 모델
 ├── cli.py              # Click CLI
-├── discord_bot.py      # Coordinator Discord Bot
-├── logging_config.py   # structlog + rich 설정
-├── backends/           # Agent backend 구현체
-├── publishers/         # Discord 발송 구현체
-└── flows/              # (확장용) 복잡한 워크플로우
+└── logging_config.py   # structlog + rich 설정
 
 tests/
 ├── unit/               # 단위 테스트

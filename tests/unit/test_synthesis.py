@@ -7,9 +7,9 @@ from typing import Any
 
 import pytest
 
-from parliament.backends.base import AgentBackend
+from parliament.agents.base import AgentBackend
 from parliament.models import BackendResult, SynthesisResult, TurnRecord
-from parliament.synthesis import Synthesizer, _extract_json, _profile_exists
+from parliament.debate.synthesis import Synthesizer, _extract_json, _profile_exists
 
 
 class MockBackend(AgentBackend):

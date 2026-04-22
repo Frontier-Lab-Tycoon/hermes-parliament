@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from parliament.backends.base import AgentBackend
-from parliament.config import ProtocolConfig, TerminationConfig, TopicConfig
-from parliament.discord_registry import DiscordRegistry
-from parliament.engine import DebateEngine
+from parliament.agents.base import AgentBackend
+from parliament.topics.config import ProtocolConfig, TerminationConfig, TopicConfig
+from parliament.integrations.discord.registry import DiscordRegistry
+from parliament.debate.engine import DebateEngine
 from parliament.models import BackendResult, TurnRecord
-from parliament.publishers.noop import NoOpPublisher
-from parliament.session import SessionStore
+from parliament.integrations.noop import NoOpPublisher
+from parliament.sessions.store import SessionStore
 
 
 @pytest.fixture

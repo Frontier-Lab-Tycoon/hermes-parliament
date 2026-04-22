@@ -6,11 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from parliament.discord_bot import ParliamentBot, _run_parliament_handler
-from parliament.discord_registry import DiscordRegistry, HermesProfile
-from parliament.engine import DebateEngine
-from parliament.index import GlobalIndex
-from parliament.session import SessionStore
+from parliament.integrations.discord.bot import ParliamentBot, _run_parliament_handler
+from parliament.integrations.discord.registry import DiscordRegistry, HermesProfile
+from parliament.debate.engine import DebateEngine
+from parliament.sessions.index import GlobalIndex
+from parliament.sessions.store import SessionStore
 
 
 class MockInteraction:

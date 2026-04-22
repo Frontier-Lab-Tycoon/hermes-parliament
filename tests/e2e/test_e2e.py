@@ -9,13 +9,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from parliament.config import ProtocolConfig, TerminationConfig, TopicConfig
-from parliament.discord_bot import _run_parliament_handler
-from parliament.discord_registry import DiscordRegistry
-from parliament.engine import DebateEngine
-from parliament.index import GlobalIndex
-from parliament.publishers.discord import DiscordPublisher
-from parliament.session import SessionStore
+from parliament.topics.config import ProtocolConfig, TerminationConfig, TopicConfig
+from parliament.integrations.discord.bot import _run_parliament_handler
+from parliament.integrations.discord.registry import DiscordRegistry
+from parliament.debate.engine import DebateEngine
+from parliament.sessions.index import GlobalIndex
+from parliament.integrations.discord.publisher import DiscordPublisher
+from parliament.sessions.store import SessionStore
 
 from tests.conftest import MockBackend, register_all_discord_posts
 

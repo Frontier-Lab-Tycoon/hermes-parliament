@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from parliament.backends.base import BackendTimeoutError
-from parliament.backends.hermes import HermesBackend, HermesInvocationError, strip_ansi
+from parliament.agents.base import BackendTimeoutError
+from parliament.agents.hermes import HermesBackend, HermesInvocationError, strip_ansi
 
 
 class TestT3ValidInvocation:
@@ -23,7 +23,7 @@ class TestT3ValidInvocation:
         mock_proc.pid = 1234
 
         with patch(
-            "parliament.backends.hermes.asyncio.create_subprocess_exec",
+            "parliament.agents.hermes.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=mock_proc),
         ):
             result = await backend.invoke("architect-devil", "안녕하세요")
@@ -45,10 +45,10 @@ class TestT3Timeout:
         mock_proc.wait = AsyncMock(return_value=0)
 
         with patch(
-            "parliament.backends.hermes.asyncio.create_subprocess_exec",
+            "parliament.agents.hermes.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=mock_proc),
         ), patch(
-            "parliament.backends.hermes.asyncio.wait_for",
+            "parliament.agents.hermes.asyncio.wait_for",
             side_effect=asyncio.TimeoutError,
         ):
             with pytest.raises(BackendTimeoutError):
@@ -65,7 +65,7 @@ class TestT3NonExistentProfile:
         backend = HermesBackend()
 
         with patch(
-            "parliament.backends.hermes.asyncio.create_subprocess_exec",
+            "parliament.agents.hermes.asyncio.create_subprocess_exec",
             side_effect=FileNotFoundError("hermes"),
         ):
             with pytest.raises(HermesInvocationError):
@@ -85,7 +85,7 @@ class TestT3AnsiStripping:
         mock_proc.pid = 1234
 
         with patch(
-            "parliament.backends.hermes.asyncio.create_subprocess_exec",
+            "parliament.agents.hermes.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=mock_proc),
         ):
             result = await backend.invoke("architect-devil", "color test")
@@ -114,7 +114,7 @@ class TestT3NonZeroExit:
         mock_proc.pid = 1234
 
         with patch(
-            "parliament.backends.hermes.asyncio.create_subprocess_exec",
+            "parliament.agents.hermes.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=mock_proc),
         ):
             result = await backend.invoke("architect-devil", "crash test")

@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from parliament.config import load_topic
-from parliament.discord_registry import load_registry
+from parliament.topics.config import load_topic
+from parliament.integrations.discord.registry import load_registry
 
 
 class TestT2ValidTopic:

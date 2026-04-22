@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 from aioresponses import aioresponses
 
-from parliament.discord_registry import DiscordRegistry, HermesProfile
+from parliament.integrations.discord.registry import DiscordRegistry, HermesProfile
 from parliament.models import TurnRecord
-from parliament.publishers.discord import DiscordPublisher
-from parliament.session import SessionStore
+from parliament.integrations.discord.publisher import DiscordPublisher
+from parliament.sessions.store import SessionStore
 
 
 @pytest.fixture

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from parliament.models import TurnRecord
-from parliament.publishers.base import Publisher
+from parliament.integrations.base import Publisher
 
 
 class NoOpPublisher(Publisher):

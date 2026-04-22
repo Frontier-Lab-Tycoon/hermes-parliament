@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from parliament.index import GlobalIndex
+from parliament.sessions.index import GlobalIndex
 from parliament.models import TurnRecord
-from parliament.session import SessionStore
+from parliament.sessions.store import SessionStore
 
 
 @pytest.fixture

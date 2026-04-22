@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from parliament.config import TopicConfig
-from parliament.context import ContextAssembler, Summarizer, load_soul_md
+from parliament.topics.config import TopicConfig
+from parliament.debate.context import ContextAssembler, Summarizer, load_soul_md
 from parliament.models import TurnRecord
-from parliament.session import SessionStore
+from parliament.sessions.store import SessionStore
 
 
 @pytest.fixture

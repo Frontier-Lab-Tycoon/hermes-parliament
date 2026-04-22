@@ -7,14 +7,14 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from parliament.backends.base import AgentBackend, BackendTimeoutError
-from parliament.config import ProtocolConfig, TopicConfig
-from parliament.context import ContextAssembler
-from parliament.discord_registry import DiscordRegistry
+from parliament.agents.base import AgentBackend, BackendTimeoutError
+from parliament.topics.config import ProtocolConfig, TopicConfig
+from parliament.debate.context import ContextAssembler
+from parliament.integrations.discord.registry import DiscordRegistry
 from parliament.models import BackendResult, TurnRecord
-from parliament.publishers.base import Publisher
-from parliament.session import SessionStore
-from parliament.synthesis import Synthesizer
+from parliament.integrations.base import Publisher
+from parliament.sessions.store import SessionStore
+from parliament.debate.synthesis import Synthesizer
 
 
 class DebateEngine:
@@ -177,7 +177,7 @@ class DebateEngine:
 
         # -- Backend ------------------------------------------------------------
         if backend is None:
-            from parliament.backends.hermes import HermesBackend
+            from parliament.agents.hermes import HermesBackend
 
             backend = HermesBackend()
 

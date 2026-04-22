@@ -6,9 +6,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from parliament.config import TopicConfig
+from parliament.topics.config import TopicConfig
 from parliament.models import TurnRecord
-from parliament.session import SessionStore
+from parliament.sessions.store import SessionStore
 
 
 def load_soul_md(profile: str) -> str | None:
