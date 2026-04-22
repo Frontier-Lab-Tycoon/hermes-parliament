@@ -8,4 +8,4 @@
 |------|------|
 | `base.py` | `Publisher` ABC. 외부 채널로 턴과 최종 결과를 발행하는 공통 계약 |
 | `noop.py` | `NoOpPublisher`. 테스트/로컬 실행용 무동작 publisher |
-| `discord/` | Discord slash command, registry, message publisher 구현체 |
+| `discord/` | Discord slash command, bot config, message publisher 구현체 |

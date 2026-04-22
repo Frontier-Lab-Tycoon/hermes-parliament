@@ -1,9 +1,8 @@
-"""Discord coordinator bot with /parliament slash command."""
+"""Parliament Discord bot with /parliament slash command."""
 
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
 from typing import Any
 
@@ -12,8 +11,18 @@ from discord import app_commands
 
 from parliament.topics.config import ProtocolConfig, TerminationConfig, TopicConfig, load_topic
 from parliament.integrations.discord.registry import DiscordRegistry, load_registry
+from parliament.integrations.discord.publisher import DiscordPublisher
 from parliament.sessions.index import GlobalIndex
 from parliament.sessions.store import SessionStore
+
+
+def _default_bot_config_path() -> Path:
+    config_dir = Path.home() / ".parliament"
+    preferred = config_dir / "bots.yaml"
+    legacy = config_dir / "discord-registry.yaml"
+    if preferred.exists() or not legacy.exists():
+        return preferred
+    return legacy
 
 
 async def _run_parliament_handler(
@@ -42,7 +51,7 @@ async def _run_parliament_handler(
         )
         return
 
-    # Lookup registry
+    # Lookup participant bot config.
     try:
         profile_1 = registry.resolve_profile(participant_1_id)
         profile_2 = registry.resolve_profile(participant_2_id)
@@ -60,6 +69,7 @@ async def _run_parliament_handler(
         config.setdefault("protocol", {}).setdefault("termination", {})[
             "max_turns"
         ] = max_turns
+        topic_config = TopicConfig(**config)
     else:
         topic_config = TopicConfig(
             session={"topic": topic, "max_turns": max_turns},
@@ -88,26 +98,35 @@ async def _run_parliament_handler(
     # Start background task
     from parliament.debate.engine import DebateEngine
 
-    engine = DebateEngine(store)
-    asyncio.create_task(engine.run(session_id))
+    publisher = None
+    channel_id = getattr(interaction, "channel_id", None)
+    if channel_id is not None or registry.coordinator.get("channel_id"):
+        publisher = DiscordPublisher(
+            registry,
+            store,
+            channel_id=str(channel_id) if channel_id is not None else None,
+        )
+
+    engine = DebateEngine(store, publisher)
+    asyncio.create_task(engine.run(session_id, topic_config, registry))
 
 
 class ParliamentBot(discord.Client):
-    """Discord coordinator bot for Hermes Parliament."""
+    """Discord-facing Parliament application bot."""
 
     def __init__(
         self,
         registry_path: str | None = None,
         default_topic_path: str | None = None,
+        sync_commands: bool = True,
         **kwargs: Any,
     ):
         intents = discord.Intents.default()
         super().__init__(intents=intents, **kwargs)
         self.tree = app_commands.CommandTree(self)
-        self.registry_path = registry_path or str(
-            Path.home() / ".parliament" / "discord-registry.yaml"
-        )
+        self.registry_path = registry_path or str(_default_bot_config_path())
         self.default_topic_path = default_topic_path
+        self.sync_commands = sync_commands
         self.registry: DiscordRegistry | None = None
         self.store = SessionStore()
         self.index = GlobalIndex()
@@ -147,7 +166,7 @@ class ParliamentBot(discord.Client):
     ) -> None:
         if self.registry is None:
             await interaction.response.send_message(
-                "Bot not ready: registry not loaded", ephemeral=True
+                "Bot not ready: bot config not loaded", ephemeral=True
             )
             return
 
@@ -165,3 +184,5 @@ class ParliamentBot(discord.Client):
 
     async def setup_hook(self) -> None:
         self.registry = load_registry(self.registry_path)
+        if self.sync_commands:
+            await self.tree.sync()

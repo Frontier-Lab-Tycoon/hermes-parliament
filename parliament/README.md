@@ -14,6 +14,6 @@ Hermes Parliament의 핵심 패키지. 토론 오케스트레이션, 지속성, 
 
 - `agents/` — 에이전트 호출 인터페이스와 Hermes CLI 구현체
 - `debate/` — 턴 루프, prompt 조립, consensus 파싱, 최종 synthesis
-- `integrations/` — 외부 연동 계약과 구현체 (`Publisher`, `NoOpPublisher`, Discord bot/registry/publisher)
+- `integrations/` — 외부 연동 계약과 구현체 (`Publisher`, `NoOpPublisher`, Discord bot config/publisher)
 - `sessions/` — `SessionStore`, append-only 로그, SQLite 글로벌 인덱스
 - `topics/` — `TopicConfig` Pydantic 모델과 YAML 로더

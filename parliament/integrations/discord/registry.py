@@ -1,4 +1,4 @@
-"""Discord Bot Registry: maps Discord user IDs to Hermes profiles."""
+"""Discord bot configuration: maps Discord user IDs to Hermes profiles."""
 
 from __future__ import annotations
 
@@ -71,12 +71,12 @@ def load_registry(path: str) -> DiscordRegistry:
     data = _substitute_env_vars(raw_data)
 
     raw_profiles = data.get("profiles", {})
-    coordinator = data.get("coordinator", {})
+    coordinator = data.get("parliament_application") or data.get("coordinator", {})
 
-    # Validate coordinator token if present
+    # Validate Parliament application token if present.
     coord_token = coordinator.get("bot_token")
     if coord_token is not None and not coord_token:
-        raise ValueError("Coordinator bot token is empty after substitution")
+        raise ValueError("Parliament bot token is empty after substitution")
 
     profiles: dict[str, HermesProfile] = {}
     for name, info in raw_profiles.items():
