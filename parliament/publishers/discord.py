@@ -37,6 +37,27 @@ class DiscordPublisher(Publisher):
         if state in ("sent", "sent_via_fallback"):
             return None  # skip
 
+        url = f"{self.DISCORD_API_BASE}/channels/{self.channel_id}/messages"
+
+        # 1b. Fallback pending – resume directly via coordinator
+        if state == "fallback_pending":
+            nonce = self.store.generate_nonce(
+                session_id, turn_record.turn_uuid, "coordinator_fallback"
+            )
+            self.store.mark_turn_publish_in_flight(
+                session_id,
+                turn_record.turn_uuid,
+                nonce,
+                intended_publisher="coordinator_fallback",
+                attempt_publisher="coordinator_fallback",
+            )
+            payload: dict[str, Any] = {
+                "content": turn_record.content,
+                "nonce": nonce,
+                "enforce_nonce": True,
+            }
+            return await self._fallback_post(url, payload, session_id, turn_record)
+
         # 2. Resolve profile and generate deterministic nonce
         profile = self.registry.resolve_by_hermes_profile(turn_record.profile)
         nonce = self.store.generate_nonce(
@@ -53,12 +74,11 @@ class DiscordPublisher(Publisher):
         )
 
         # 4. Build request payload
-        url = f"{self.DISCORD_API_BASE}/channels/{self.channel_id}/messages"
         headers: dict[str, str] = {
             "Authorization": f"Bot {profile.discord_bot_token}",
             "Content-Type": "application/json",
         }
-        payload: dict[str, Any] = {
+        payload = {
             "content": turn_record.content,
             "nonce": nonce,
             "enforce_nonce": True,
