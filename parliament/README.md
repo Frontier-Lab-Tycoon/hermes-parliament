@@ -6,7 +6,7 @@ Hermes Parliament의 핵심 패키지. 토론 오케스트레이션, 지속성, 
 
 | 모듈 | 역할 |
 |------|------|
-| `models.py` | Pydantic v2 공용 데이터 모델. `TurnRecord`, `DeliveryEvent`, `PublishState`, `SynthesisResult` 등 |
+| `models/` | 도메인별 데이터 모델과 enum. `TurnRecord`, `DeliveryEvent`, `PublishState`, `SynthesisResult` 등 |
 | `cli.py` | Click 기반 CLI. `parliament run-bot` 등 |
 | `logging_config.py` | `structlog` + `rich` 로깅 설정 |
 

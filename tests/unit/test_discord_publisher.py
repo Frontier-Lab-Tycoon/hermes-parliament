@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -10,7 +11,7 @@ from aioresponses import aioresponses
 
 from parliament.integrations.discord.publisher import DiscordPublisher
 from parliament.integrations.discord.registry import DiscordRegistry, HermesProfile
-from parliament.models import PublishState, TurnRecord
+from parliament.models import PublishState, TurnRecord, TurnRole
 from parliament.sessions.store import SessionStore
 
 DISCORD_API_URL = "https://discord.com/api/v10/channels/999999999/messages"
@@ -52,7 +53,7 @@ class TestDiscordPublisher:
             turn_uuid="turn-1",
             seq=0,
             profile="architect-devil",
-            role="debater",
+            role=TurnRole.DEBATER,
             content="Hello world",
         )
 
@@ -64,25 +65,27 @@ class TestDiscordPublisher:
         return turn_record
 
     @pytest.fixture
-    def discord_api(self):
+    def discord_api(self) -> Iterator[aioresponses]:
         with aioresponses() as mocked_api:
             yield mocked_api
 
     @pytest.fixture
-    def successful_post(self, discord_api):
+    def successful_post(self, discord_api: aioresponses) -> None:
         discord_api.post(DISCORD_API_URL, status=200, payload={"id": "msg-123"})
 
     @pytest.fixture
-    def fallback_post(self, discord_api):
+    def fallback_post(self, discord_api: aioresponses) -> None:
         discord_api.post(DISCORD_API_URL, status=403)
         discord_api.post(DISCORD_API_URL, status=200, payload={"id": "msg-fallback"})
 
     @pytest.fixture
-    def timeout_post(self, discord_api):
+    def timeout_post(self, discord_api: aioresponses) -> None:
         discord_api.post(DISCORD_API_URL, exception=TimeoutError(), repeat=4)
 
     @pytest.fixture
-    def rate_limited_post(self, discord_api, monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    def rate_limited_post(
+        self, discord_api: aioresponses, monkeypatch: pytest.MonkeyPatch
+    ) -> list[float]:
         sleep_calls: list[float] = []
 
         async def fake_sleep(delay: float) -> None:
@@ -115,14 +118,13 @@ class TestDiscordPublisher:
         store: SessionStore,
         session_id: str,
         persisted_turn: TurnRecord,
-        successful_post,
+        successful_post: None,
     ) -> None:
         msg_id = await publisher.send_turn(session_id, persisted_turn)
 
         assert msg_id == "msg-123"
         assert (
-            store.get_turn_publish_state(session_id, persisted_turn.turn_uuid)
-            == PublishState.SENT
+            store.get_turn_publish_state(session_id, persisted_turn.turn_uuid) == PublishState.SENT
         )
 
     async def test_unauthorized_participant_publish_falls_back_to_coordinator(
@@ -131,7 +133,7 @@ class TestDiscordPublisher:
         store: SessionStore,
         session_id: str,
         persisted_turn: TurnRecord,
-        fallback_post,
+        fallback_post: None,
     ) -> None:
         msg_id = await publisher.send_turn(session_id, persisted_turn)
 
@@ -147,7 +149,7 @@ class TestDiscordPublisher:
         store: SessionStore,
         session_id: str,
         persisted_turn: TurnRecord,
-        timeout_post,
+        timeout_post: None,
     ) -> None:
         msg_id = await publisher.send_turn(session_id, persisted_turn)
 
@@ -170,16 +172,15 @@ class TestDiscordPublisher:
         assert msg_id == "msg-429-ok"
         assert rate_limited_post == [0.5]
         assert (
-            store.get_turn_publish_state(session_id, persisted_turn.turn_uuid)
-            == PublishState.SENT
+            store.get_turn_publish_state(session_id, persisted_turn.turn_uuid) == PublishState.SENT
         )
 
     async def test_already_sent_turn_is_not_republished(
-        self,
+        self: TestDiscordPublisher,
         publisher: DiscordPublisher,
         session_id: str,
         already_sent: TurnRecord,
-        discord_api,
+        discord_api: aioresponses,
     ) -> None:
         msg_id = await publisher.send_turn(session_id, already_sent)
 

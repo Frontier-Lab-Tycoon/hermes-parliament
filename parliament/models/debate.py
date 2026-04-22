@@ -1,54 +1,19 @@
-"""Pydantic data models and typed value objects for Hermes Parliament."""
+"""Debate turn and synthesis models."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TypeAlias, cast
+from typing import cast
 
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import BaseModel
 
-JSONValue: TypeAlias = JsonValue
-JSONObject: TypeAlias = dict[str, JSONValue]
-
-
-def utc_timestamp() -> str:
-    """Return an ISO-8601 UTC timestamp suitable for persisted JSON records."""
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
-
-
-class PublishState(StrEnum):
-    """Publish lifecycle states for a turn."""
-
-    PENDING = "pending"
-    IN_FLIGHT = "in_flight"
-    FALLBACK_PENDING = "fallback_pending"
-    SENT = "sent"
-    SENT_VIA_FALLBACK = "sent_via_fallback"
-    FAILED_RETRYABLE = "failed_retryable"
-    FAILED_TERMINAL = "failed_terminal"
-
-
-class DeliveryEventType(StrEnum):
-    """Types of delivery events persisted to delivery.jsonl."""
-
-    PUBLISH_STATE_CHANGED = "publish_state_changed"
-
-
-class HistoryRecordType(StrEnum):
-    """Types of records persisted to history.jsonl."""
-
-    TURN_CONTENT = "turn_content"
-    SUMMARY = "summary"
-    PROMPT_SNAPSHOT = "prompt_snapshot"
-
-
-class SessionStatus(StrEnum):
-    """Session lifecycle states."""
-
-    RUNNING = "running"
-    COMPLETED = "completed"
+from parliament.models.common import (
+    HistoryRecordType,
+    JSONObject,
+    JSONValue,
+    utc_timestamp,
+)
 
 
 class TurnRole(StrEnum):
@@ -75,24 +40,6 @@ class ConsensusSignal(StrEnum):
             return None
 
 
-class ProtocolType(StrEnum):
-    """Supported debate protocol types."""
-
-    DEBATE = "debate"
-
-
-class ProtocolOrdering(StrEnum):
-    """Supported speaker ordering strategies."""
-
-    ALTERNATING = "alternating"
-
-
-class DiscordPublishMode(StrEnum):
-    """Supported Discord publishing modes."""
-
-    PER_TURN = "per_turn"
-
-
 class TurnRecord(BaseModel):
     """Immutable turn content record."""
 
@@ -103,49 +50,6 @@ class TurnRecord(BaseModel):
     content: str
     structured: JSONObject | None = None
     consensus_signal: ConsensusSignal | None = None
-
-
-class DeliveryEvent(BaseModel):
-    """Append-only publish state change event."""
-
-    seq: int
-    turn_uuid: str
-    event_type: DeliveryEventType = DeliveryEventType.PUBLISH_STATE_CHANGED
-    new_state: PublishState
-    metadata: JSONObject = Field(default_factory=dict)
-    timestamp: str = Field(default_factory=utc_timestamp)
-
-
-class Checkpoint(BaseModel):
-    """Crash-recovery checkpoint (overwritten)."""
-
-    session_id: str
-    status: SessionStatus = SessionStatus.RUNNING
-    config: JSONObject = Field(default_factory=dict)
-    created_at: str = ""
-    next_turn_index: int = 0
-    next_speaker: str | None = None
-    last_safe_published_turn_uuid: str | None = None
-    pending_turn_uuid: str | None = None
-
-
-class Session(BaseModel):
-    """Joined session view (history + delivery replay)."""
-
-    session_id: str
-    status: SessionStatus
-    config: JSONObject
-    turns: list[TurnRecord]
-    created_at: str
-
-
-@dataclass(frozen=True)
-class BackendResult:
-    """Result from invoking an agent backend."""
-
-    text: str
-    code: int
-    error: str | None = None
 
 
 @dataclass(frozen=True)

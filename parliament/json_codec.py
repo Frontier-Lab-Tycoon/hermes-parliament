@@ -6,7 +6,7 @@ from typing import cast
 
 import orjson
 
-from parliament.models import JSONObject, JSONValue
+from parliament.models.common import JSONObject, JSONValue
 
 
 def dumps_json(value: object) -> str:

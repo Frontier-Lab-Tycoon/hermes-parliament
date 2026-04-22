@@ -8,6 +8,7 @@ from typing import cast
 
 from parliament.agents.base import AgentBackend
 from parliament.json_codec import dumps_pretty_json, loads_json
+from parliament.json_fields import bool_field, float_field, str_field, str_list_field
 from parliament.models import (
     BackendResult,
     ConsensusSignal,
@@ -75,31 +76,6 @@ def _validate_and_strip(data: JSONObject, schema: JSONObject) -> JSONObject:
                 raise ValueError(f"Field {key} must be boolean")
 
     return data
-
-
-def _str_field(data: JSONObject, key: str, default: str = "") -> str:
-    value = data.get(key, default)
-    return value if isinstance(value, str) else default
-
-
-def _float_field(data: JSONObject, key: str, default: float = 0.0) -> float:
-    value = data.get(key, default)
-    if isinstance(value, bool):
-        return default
-    return float(value) if isinstance(value, (int, float)) else default
-
-
-def _bool_field(data: JSONObject, key: str, default: bool = False) -> bool:
-    value = data.get(key, default)
-    return value if isinstance(value, bool) else default
-
-
-def _str_list_field(data: JSONObject, key: str) -> list[str] | None:
-    value = data.get(key)
-    if not isinstance(value, list):
-        return None
-    strings = [item for item in value if isinstance(item, str)]
-    return strings or None
 
 
 def _assemble_prompt(history: list[TurnRecord], schema: JSONObject) -> str:
@@ -195,11 +171,11 @@ class Synthesizer:
 
             # Success path
             return SynthesisResult(
-                decision=_str_field(data, "decision"),
-                confidence=_float_field(data, "confidence"),
-                reasoning=_str_field(data, "reasoning"),
-                consensus_reached=_bool_field(data, "consensus_reached"),
-                disagreeing_profiles=_str_list_field(data, "disagreeing_profiles"),
+                decision=str_field(data, "decision"),
+                confidence=float_field(data, "confidence"),
+                reasoning=str_field(data, "reasoning"),
+                consensus_reached=bool_field(data, "consensus_reached"),
+                disagreeing_profiles=str_list_field(data, "disagreeing_profiles"),
             )
 
         # All retries exhausted → fallback
