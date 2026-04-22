@@ -3,5 +3,6 @@
 from parliament import __version__
 
 
-def test_version() -> None:
-    assert __version__ == "0.1.0"
+class TestBootstrap:
+    async def test_version(self) -> None:
+        assert __version__ == "0.1.0"

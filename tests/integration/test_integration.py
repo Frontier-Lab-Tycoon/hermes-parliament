@@ -10,12 +10,12 @@ from typing import Any
 import pytest
 from aioresponses import CallbackResult
 
-from parliament.topics.config import ProtocolConfig, TerminationConfig, TopicConfig
-from parliament.integrations.discord.registry import DiscordRegistry
 from parliament.debate.engine import DebateEngine
-from parliament.models import TurnRecord
 from parliament.integrations.discord.publisher import DiscordPublisher
+from parliament.integrations.discord.registry import DiscordRegistry
+from parliament.models import TurnRecord
 from parliament.sessions.store import SessionStore
+from parliament.topics.config import ProtocolConfig, TerminationConfig, TopicConfig
 
 from tests.conftest import MockBackend, register_all_discord_posts
 
@@ -23,543 +23,314 @@ from tests.conftest import MockBackend, register_all_discord_posts
 DISCORD_API_URL = "https://discord.com/api/v10/channels/999999999/messages"
 
 
-def _synthesis_json(
-    decision: str = "test",
-    confidence: float = 0.5,
-    reasoning: str = "test",
-    consensus_reached: bool = False,
-) -> str:
-    return (
-        "```json\n"
-        f"{{\n"
-        f'  "decision": "{decision}",\n'
-        f'  "confidence": {confidence},\n'
-        f'  "reasoning": "{reasoning}",\n'
-        f'  "consensus_reached": {str(consensus_reached).lower()}\n'
-        f"}}\n"
-        "```"
-    )
-
-
-def _make_topic_config(max_turns: int = 10, early_stop: bool = True) -> TopicConfig:
-    return TopicConfig(
-        participant_1="architect-devil",
-        participant_2="architect-angel",
-        protocol=ProtocolConfig(
-            termination=TerminationConfig(
-                max_turns=max_turns,
-                min_turns=2,
-                early_stop=early_stop,
-            )
-        ),
-        synthesis={"enabled": True, "profile": "coordinator", "output": {"schema": {}}},
-    )
-
-
-def _setup_coordinator_profile(fake_home: Path) -> None:
-    profile_dir = fake_home / ".hermes" / "profiles" / "coordinator"
-    profile_dir.mkdir(parents=True)
-    (profile_dir / "SOUL.md").write_text("coordinator soul")
-
-
-class TestT9HappyPath:
-    """T9-1: 4 turns + synthesis."""
-
-    async def test_four_turns_plus_synthesis(
-        self,
-        store: SessionStore,
-        registry: DiscordRegistry,
-        mock_backend,
-        mock_discord_api,
-        fake_hermes_home: Path,
-    ) -> None:
-        _setup_coordinator_profile(fake_hermes_home)
-        config = _make_topic_config(max_turns=4)
-        sid = store.create_session(
-            "topic", ["architect-devil", "architect-angel"], config.model_dump()
+class TestParliamentIntegration:
+    @staticmethod
+    def synthesis_json(
+        decision: str = "test",
+        confidence: float = 0.5,
+        reasoning: str = "test",
+        consensus_reached: bool = False,
+    ) -> str:
+        return (
+            "```json\n"
+            "{\n"
+            f'  "decision": "{decision}",\n'
+            f'  "confidence": {confidence},\n'
+            f'  "reasoning": "{reasoning}",\n'
+            f'  "consensus_reached": {str(consensus_reached).lower()}\n'
+            "}\n"
+            "```"
         )
 
-        responses = [
-            "devil turn 1",
-            "angel turn 1",
-            "devil turn 2",
-            "angel turn 2",
-            _synthesis_json(decision="go monolith", consensus_reached=True),
-        ]
-        backend = mock_backend(responses)
+    @pytest.fixture(autouse=True)
+    def coordinator_profile(self, fake_hermes_home: Path) -> None:
+        profile_dir = fake_hermes_home / ".hermes" / "profiles" / "coordinator"
+        profile_dir.mkdir(parents=True)
+        (profile_dir / "SOUL.md").write_text("coordinator soul", encoding="utf-8")
 
-        calls = register_all_discord_posts(mock_discord_api)
+    @pytest.fixture
+    def config(self) -> TopicConfig:
+        return self.make_config(max_turns=4)
 
-        publisher = DiscordPublisher(registry, store)
-        engine = DebateEngine(store, publisher)
-        await engine.run(sid, config, registry, backend)
+    @pytest.fixture
+    def short_config(self) -> TopicConfig:
+        return self.make_config(max_turns=2)
 
-        lines = (
-            store._history_path(sid).read_text(encoding="utf-8").strip().split("\n")
-        )
-        turn_events = [
-            json.loads(line)
-            for line in lines
-            if json.loads(line).get("type") == "turn_content"
-        ]
-        assert len(turn_events) == 4
+    @pytest.fixture
+    def early_stop_config(self) -> TopicConfig:
+        return self.make_config(max_turns=10, early_stop=True)
 
-        for i in range(4):
-            assert store.get_turn_publish_state(sid, f"t-{i}") == "sent"
+    @pytest.fixture
+    def publisher(
+        self, registry: DiscordRegistry, store: SessionStore
+    ) -> DiscordPublisher:
+        return DiscordPublisher(registry, store)
 
-        # 4 turns + 1 final message
-        assert len(calls) == 5
+    @pytest.fixture
+    def discord_posts(self, mock_discord_api) -> list[dict[str, Any]]:
+        return register_all_discord_posts(mock_discord_api)
 
-        cp = json.loads(store._checkpoint_path(sid).read_text(encoding="utf-8"))
-        assert cp["status"] == "completed"
-
-
-class TestT9EarlyStop:
-    """T9-2: turn 3 both agree → stops at 3."""
-
-    async def test_stops_at_three(
-        self,
-        store: SessionStore,
-        registry: DiscordRegistry,
-        mock_backend,
-        mock_discord_api,
-        fake_hermes_home: Path,
-    ) -> None:
-        _setup_coordinator_profile(fake_hermes_home)
-        config = _make_topic_config(max_turns=10, early_stop=True)
-        sid = store.create_session(
-            "topic", ["architect-devil", "architect-angel"], config.model_dump()
-        )
-
-        responses = [
-            "I disagree",  # devil – no signal
-            "I agree\n\n=== PARLIAMENT SIGNAL ===\nagree",  # angel
-            "I also agree\n\n=== PARLIAMENT SIGNAL ===\nagree",  # devil
-            _synthesis_json(consensus_reached=True),
-        ]
-        backend = mock_backend(responses)
-
-        calls = register_all_discord_posts(mock_discord_api)
-
-        publisher = DiscordPublisher(registry, store)
-        engine = DebateEngine(store, publisher)
-        await engine.run(sid, config, registry, backend)
-
-        lines = (
-            store._history_path(sid).read_text(encoding="utf-8").strip().split("\n")
-        )
-        turn_events = [
-            json.loads(line)
-            for line in lines
-            if json.loads(line).get("type") == "turn_content"
-        ]
-        assert len(turn_events) == 3
-
-        for i in range(3):
-            assert store.get_turn_publish_state(sid, f"t-{i}") == "sent"
-
-        assert len(calls) == 4  # 3 turns + final
-
-        cp = json.loads(store._checkpoint_path(sid).read_text(encoding="utf-8"))
-        assert cp["status"] == "completed"
-
-
-class TestT9MaxTurns:
-    """T9-3: 10 turns disagreement → stops at 10."""
-
-    async def test_runs_all_ten(
-        self,
-        store: SessionStore,
-        registry: DiscordRegistry,
-        mock_backend,
-        mock_discord_api,
-        fake_hermes_home: Path,
-    ) -> None:
-        _setup_coordinator_profile(fake_hermes_home)
-        config = _make_topic_config(max_turns=10, early_stop=True)
-        sid = store.create_session(
-            "topic", ["architect-devil", "architect-angel"], config.model_dump()
-        )
-
-        turn_texts = [f"turn {i}" for i in range(10)]
-        responses = turn_texts + [_synthesis_json()]
-        backend = mock_backend(responses)
-
-        calls = register_all_discord_posts(mock_discord_api)
-
-        publisher = DiscordPublisher(registry, store)
-        engine = DebateEngine(store, publisher)
-        await engine.run(sid, config, registry, backend)
-
-        lines = (
-            store._history_path(sid).read_text(encoding="utf-8").strip().split("\n")
-        )
-        turn_events = [
-            json.loads(line)
-            for line in lines
-            if json.loads(line).get("type") == "turn_content"
-        ]
-        assert len(turn_events) == 10
-
-        for i in range(10):
-            assert store.get_turn_publish_state(sid, f"t-{i}") == "sent"
-
-        assert len(calls) == 11  # 10 turns + final
-
-        cp = json.loads(store._checkpoint_path(sid).read_text(encoding="utf-8"))
-        assert cp["status"] == "completed"
-
-
-class TestT9CrashRecovery:
-    """T9-4: crash after in_flight, resume with no duplicate publish."""
-
-    async def test_resume_after_in_flight_crash(
-        self,
-        store: SessionStore,
-        registry: DiscordRegistry,
-        mock_backend,
-        mock_discord_api,
-        fake_hermes_home: Path,
-    ) -> None:
-        _setup_coordinator_profile(fake_hermes_home)
-        config = _make_topic_config(max_turns=4)
-        sid = store.create_session(
-            "topic", ["architect-devil", "architect-angel"], config.model_dump()
-        )
-
-        # Two successfully published turns
-        for i, profile in enumerate(["architect-devil", "architect-angel"]):
-            turn = TurnRecord(
-                turn_uuid=f"t-{i}",
-                seq=i,
-                profile=profile,
-                role="debater",
-                content=f"turn {i}",
-            )
-            store.append_turn(sid, turn)
-            pub_id = registry.resolve_by_hermes_profile(profile).discord_user_id
-            store.mark_turn_published(
-                sid,
-                f"t-{i}",
-                f"msg-{i}",
-                pub_id,
-                "2026-04-22T00:00:00Z",
-                state="sent",
-                attempt_publisher=pub_id,
-            )
-
-        # Turn 2: in-flight but crashed before published
-        turn2 = TurnRecord(
-            turn_uuid="t-2",
-            seq=2,
-            profile="architect-devil",
-            role="debater",
-            content="turn 2",
-        )
-        store.append_turn(sid, turn2)
-        nonce = store.generate_nonce(sid, "t-2", "123456789")
-        store.mark_turn_publish_in_flight(
-            sid, "t-2", nonce, "123456789", "123456789"
-        )
-
-        responses = [
-            "angel turn 2",  # turn 3
-            _synthesis_json(),
-        ]
-        backend = mock_backend(responses)
-
-        calls = register_all_discord_posts(mock_discord_api)
-
-        publisher = DiscordPublisher(registry, store)
-        engine = DebateEngine(store, publisher)
-        await engine.run(sid, config, registry, backend)
-
-        # Resume publishes turn 2, then turn 3, then final = 3 POSTs total
-        assert len(calls) == 3
-
-        assert store.get_turn_publish_state(sid, "t-2") == "sent"
-        assert store.get_turn_publish_state(sid, "t-3") == "sent"
-
-        lines = (
-            store._history_path(sid).read_text(encoding="utf-8").strip().split("\n")
-        )
-        turn_events = [
-            json.loads(line)
-            for line in lines
-            if json.loads(line).get("type") == "turn_content"
-        ]
-        assert len(turn_events) == 4
-
-        cp = json.loads(store._checkpoint_path(sid).read_text(encoding="utf-8"))
-        assert cp["status"] == "completed"
-
-
-class TestT9CrashRecoveryFallback:
-    """T9-4b: crash during fallback flow, resume correctly."""
-
-    async def test_resume_after_fallback_crash(
-        self,
-        store: SessionStore,
-        registry: DiscordRegistry,
-        mock_backend,
-        mock_discord_api,
-        fake_hermes_home: Path,
-    ) -> None:
-        _setup_coordinator_profile(fake_hermes_home)
-        config = _make_topic_config(max_turns=4)
-        sid = store.create_session(
-            "topic", ["architect-devil", "architect-angel"], config.model_dump()
-        )
-
-        # Two successfully published turns
-        for i, profile in enumerate(["architect-devil", "architect-angel"]):
-            turn = TurnRecord(
-                turn_uuid=f"t-{i}",
-                seq=i,
-                profile=profile,
-                role="debater",
-                content=f"turn {i}",
-            )
-            store.append_turn(sid, turn)
-            pub_id = registry.resolve_by_hermes_profile(profile).discord_user_id
-            store.mark_turn_published(
-                sid,
-                f"t-{i}",
-                f"msg-{i}",
-                pub_id,
-                "2026-04-22T00:00:00Z",
-                state="sent",
-                attempt_publisher=pub_id,
-            )
-
-        # Turn 2: participant bot failed → fallback_pending → crash before fallback post
-        turn2 = TurnRecord(
-            turn_uuid="t-2",
-            seq=2,
-            profile="architect-devil",
-            role="debater",
-            content="turn 2",
-        )
-        store.append_turn(sid, turn2)
-        store.mark_turn_publish_fallback_pending(
-            sid, "t-2", "HTTP 403: unauthorized", attempt_publisher="123456789"
-        )
-
-        responses = [
-            "angel turn 2",  # turn 3
-            _synthesis_json(),
-        ]
-        backend = mock_backend(responses)
-
-        calls = register_all_discord_posts(mock_discord_api)
-
-        publisher = DiscordPublisher(registry, store)
-        engine = DebateEngine(store, publisher)
-        await engine.run(sid, config, registry, backend)
-
-        # Resume fallback-publishes turn 2, then turn 3, then final = 3 POSTs
-        assert len(calls) == 3
-
-        assert store.get_turn_publish_state(sid, "t-2") == "sent_via_fallback"
-        assert store.get_turn_publish_state(sid, "t-3") == "sent"
-
-        lines = (
-            store._history_path(sid).read_text(encoding="utf-8").strip().split("\n")
-        )
-        turn_events = [
-            json.loads(line)
-            for line in lines
-            if json.loads(line).get("type") == "turn_content"
-        ]
-        assert len(turn_events) == 4
-
-        cp = json.loads(store._checkpoint_path(sid).read_text(encoding="utf-8"))
-        assert cp["status"] == "completed"
-
-
-class TestT9BotOffline:
-    """T9-5: 403 from participant bot → coordinator fallback, debate continues."""
-
-    async def test_fallback_on_403(
-        self,
-        store: SessionStore,
-        registry: DiscordRegistry,
-        mock_backend,
-        mock_discord_api,
-        fake_hermes_home: Path,
-    ) -> None:
-        _setup_coordinator_profile(fake_hermes_home)
-        config = _make_topic_config(max_turns=4)
-        sid = store.create_session(
-            "topic", ["architect-devil", "architect-angel"], config.model_dump()
-        )
-
-        responses = [
-            "devil turn 1",
-            "angel turn 1",
-            "devil turn 2",
-            "angel turn 2",
-            _synthesis_json(),
-        ]
-        backend = mock_backend(responses)
-
-        call_counter = 0
-
-        def _callback(url, **kwargs):
-            nonlocal call_counter
-            call_counter += 1
+    @pytest.fixture
+    def fallback_discord_api(self, mock_discord_api) -> None:
+        def callback(url, **kwargs):
             headers = kwargs.get("headers", {})
             auth = headers.get("Authorization", "")
             if "devil-token" in auth or "angel-token" in auth:
                 return CallbackResult(status=403)
-            return CallbackResult(status=200, payload={"id": f"msg-{call_counter}"})
+            return CallbackResult(status=200, payload={"id": "msg-fallback"})
 
-        mock_discord_api.post(DISCORD_API_URL, callback=_callback, repeat=True)
+        mock_discord_api.post(DISCORD_API_URL, callback=callback, repeat=True)
 
-        publisher = DiscordPublisher(registry, store)
-        engine = DebateEngine(store, publisher)
-        await engine.run(sid, config, registry, backend)
+    @pytest.fixture
+    def happy_path_backend(self, mock_backend) -> MockBackend:
+        return mock_backend(
+            [
+                "devil turn 1",
+                "angel turn 1",
+                "devil turn 2",
+                "angel turn 2",
+                self.synthesis_json(decision="go monolith", consensus_reached=True),
+            ]
+        )
 
-        for i in range(4):
-            state = store.get_turn_publish_state(sid, f"t-{i}")
-            assert state in ("sent", "sent_via_fallback")
+    @pytest.fixture
+    def early_stop_backend(self, mock_backend) -> MockBackend:
+        return mock_backend(
+            [
+                "I disagree",
+                "I agree\n\n=== PARLIAMENT SIGNAL ===\nagree",
+                "I also agree\n\n=== PARLIAMENT SIGNAL ===\nagree",
+                self.synthesis_json(consensus_reached=True),
+            ]
+        )
+
+    @pytest.fixture
+    def timeout_backend(self, mock_backend) -> MockBackend:
+        return mock_backend(
+            [
+                "angel turn 1",
+                "angel turn 2",
+                self.synthesis_json(),
+            ],
+            timeout_profile="architect-devil",
+        )
+
+    def make_config(self, max_turns: int, early_stop: bool = True) -> TopicConfig:
+        return TopicConfig(
+            participant_1="architect-devil",
+            participant_2="architect-angel",
+            protocol=ProtocolConfig(
+                termination=TerminationConfig(
+                    max_turns=max_turns,
+                    min_turns=2,
+                    early_stop=early_stop,
+                )
+            ),
+            synthesis={
+                "enabled": True,
+                "profile": "coordinator",
+                "output": {"schema": {}},
+            },
+        )
+
+    def create_session(self, store: SessionStore, config: TopicConfig, topic: str) -> str:
+        return store.create_session(
+            topic,
+            ["architect-devil", "architect-angel"],
+            config.model_dump(),
+        )
+
+    def turn_events(self, store: SessionStore, session_id: str) -> list[dict[str, Any]]:
+        return [
+            json.loads(line)
+            for line in store._history_path(session_id).read_text(encoding="utf-8").splitlines()
+            if json.loads(line).get("type") == "turn_content"
+        ]
+
+    async def run_engine(
+        self,
+        store: SessionStore,
+        registry: DiscordRegistry,
+        publisher: DiscordPublisher,
+        session_id: str,
+        config: TopicConfig,
+        backend: MockBackend,
+    ) -> None:
+        await DebateEngine(store, publisher).run(session_id, config, registry, backend)
+
+    async def test_happy_path_publishes_turns_and_final_result(
+        self,
+        store: SessionStore,
+        registry: DiscordRegistry,
+        publisher: DiscordPublisher,
+        config: TopicConfig,
+        happy_path_backend: MockBackend,
+        discord_posts: list[dict[str, Any]],
+    ) -> None:
+        sid = self.create_session(store, config, "topic")
+
+        await self.run_engine(
+            store, registry, publisher, sid, config, happy_path_backend
+        )
+
+        assert len(self.turn_events(store, sid)) == 4
+        assert len(discord_posts) == 5
+        assert store.load_session(sid).status == "completed"
+
+    async def test_early_stop_finishes_after_consensus(
+        self,
+        store: SessionStore,
+        registry: DiscordRegistry,
+        publisher: DiscordPublisher,
+        early_stop_config: TopicConfig,
+        early_stop_backend: MockBackend,
+        discord_posts: list[dict[str, Any]],
+    ) -> None:
+        sid = self.create_session(store, early_stop_config, "topic")
+
+        await self.run_engine(
+            store, registry, publisher, sid, early_stop_config, early_stop_backend
+        )
+
+        assert len(self.turn_events(store, sid)) == 3
+        assert len(discord_posts) == 4
+        assert store.load_session(sid).status == "completed"
+
+    async def test_resume_republishes_in_flight_turn_without_duplicate_history(
+        self,
+        store: SessionStore,
+        registry: DiscordRegistry,
+        publisher: DiscordPublisher,
+        config: TopicConfig,
+        mock_backend,
+        discord_posts: list[dict[str, Any]],
+    ) -> None:
+        sid = self.create_session(store, config, "topic")
+        for i, profile in enumerate(["architect-devil", "architect-angel"]):
+            turn = TurnRecord(
+                turn_uuid=f"t-{i}",
+                seq=i,
+                profile=profile,
+                role="debater",
+                content=f"turn {i}",
+            )
+            store.append_turn(sid, turn)
+            publisher_id = registry.resolve_by_hermes_profile(profile).discord_user_id
+            store.mark_turn_published(
+                sid,
+                f"t-{i}",
+                f"msg-{i}",
+                publisher_id,
+                "2026-04-22T00:00:00Z",
+                state="sent",
+                attempt_publisher=publisher_id,
+            )
+
+        turn = TurnRecord(
+            turn_uuid="t-2",
+            seq=2,
+            profile="architect-devil",
+            role="debater",
+            content="turn 2",
+        )
+        store.append_turn(sid, turn)
+        nonce = store.generate_nonce(sid, "t-2", "123456789")
+        store.mark_turn_publish_in_flight(sid, "t-2", nonce, "123456789", "123456789")
+
+        await self.run_engine(
+            store,
+            registry,
+            publisher,
+            sid,
+            config,
+            mock_backend(["angel turn 2", self.synthesis_json()]),
+        )
+
+        assert len(discord_posts) == 3
+        assert len(self.turn_events(store, sid)) == 4
+        assert store.get_turn_publish_state(sid, "t-2") == "sent"
+        assert store.get_turn_publish_state(sid, "t-3") == "sent"
+
+    async def test_participant_publish_failure_falls_back_and_continues(
+        self,
+        store: SessionStore,
+        registry: DiscordRegistry,
+        publisher: DiscordPublisher,
+        config: TopicConfig,
+        happy_path_backend: MockBackend,
+        fallback_discord_api,
+    ) -> None:
+        sid = self.create_session(store, config, "topic")
+
+        await self.run_engine(
+            store, registry, publisher, sid, config, happy_path_backend
+        )
 
         states = [store.get_turn_publish_state(sid, f"t-{i}") for i in range(4)]
-        assert any(s == "sent_via_fallback" for s in states)
+        assert "sent_via_fallback" in states
+        assert len(self.turn_events(store, sid)) == 4
+        assert store.load_session(sid).status == "completed"
 
-        lines = (
-            store._history_path(sid).read_text(encoding="utf-8").strip().split("\n")
-        )
-        turn_events = [
-            json.loads(line)
-            for line in lines
-            if json.loads(line).get("type") == "turn_content"
-        ]
-        assert len(turn_events) == 4
-
-        cp = json.loads(store._checkpoint_path(sid).read_text(encoding="utf-8"))
-        assert cp["status"] == "completed"
-
-
-class TestT9HermesTimeout:
-    """T9-6: one participant times out → [TIMEOUT] recorded, next turn proceeds."""
-
-    async def test_timeout_recorded_and_continues(
+    async def test_agent_timeout_is_recorded_and_debate_continues(
         self,
         store: SessionStore,
         registry: DiscordRegistry,
-        mock_backend,
-        mock_discord_api,
-        fake_hermes_home: Path,
+        publisher: DiscordPublisher,
+        config: TopicConfig,
+        timeout_backend: MockBackend,
+        discord_posts: list[dict[str, Any]],
     ) -> None:
-        _setup_coordinator_profile(fake_hermes_home)
-        config = _make_topic_config(max_turns=4)
-        sid = store.create_session(
-            "topic", ["architect-devil", "architect-angel"], config.model_dump()
-        )
+        sid = self.create_session(store, config, "topic")
 
-        responses = [
+        await self.run_engine(store, registry, publisher, sid, config, timeout_backend)
+
+        turns = self.turn_events(store, sid)
+        assert [turn["content"] for turn in turns] == [
+            "[TIMEOUT] 응답 없음",
             "angel turn 1",
+            "[TIMEOUT] 응답 없음",
             "angel turn 2",
-            _synthesis_json(),
         ]
-        backend = mock_backend(responses, timeout_profile="architect-devil")
+        assert len(discord_posts) == 5
+        assert store.load_session(sid).status == "completed"
 
-        calls = register_all_discord_posts(mock_discord_api)
-
-        publisher = DiscordPublisher(registry, store)
-        engine = DebateEngine(store, publisher)
-        await engine.run(sid, config, registry, backend)
-
-        lines = (
-            store._history_path(sid).read_text(encoding="utf-8").strip().split("\n")
-        )
-        turn_events = [
-            json.loads(line)
-            for line in lines
-            if json.loads(line).get("type") == "turn_content"
-        ]
-        assert len(turn_events) == 4
-
-        assert turn_events[0]["content"] == "[TIMEOUT] 응답 없음"
-        assert turn_events[0]["profile"] == "architect-devil"
-        assert turn_events[2]["content"] == "[TIMEOUT] 응답 없음"
-        assert turn_events[2]["profile"] == "architect-devil"
-
-        assert turn_events[1]["content"] == "angel turn 1"
-        assert turn_events[3]["content"] == "angel turn 2"
-
-        cp = json.loads(store._checkpoint_path(sid).read_text(encoding="utf-8"))
-        assert cp["status"] == "completed"
-
-
-class TestT9ConcurrentSessions:
-    """T9-7: two simultaneous sessions, data isolation."""
-
-    async def test_two_sessions_are_isolated(
+    async def test_concurrent_sessions_are_isolated(
         self,
         store: SessionStore,
         registry: DiscordRegistry,
+        publisher: DiscordPublisher,
+        short_config: TopicConfig,
         mock_backend,
-        mock_discord_api,
-        fake_hermes_home: Path,
+        discord_posts: list[dict[str, Any]],
     ) -> None:
-        _setup_coordinator_profile(fake_hermes_home)
-        config = _make_topic_config(max_turns=2)
-        sid_a = store.create_session(
-            "topic A", ["architect-devil", "architect-angel"], config.model_dump()
-        )
-        sid_b = store.create_session(
-            "topic B", ["architect-devil", "architect-angel"], config.model_dump()
-        )
-
-        responses_a = [
-            "A devil",
-            "A angel",
-            _synthesis_json(decision="A"),
-        ]
-        responses_b = [
-            "B devil",
-            "B angel",
-            _synthesis_json(decision="B"),
-        ]
-        backend_a = mock_backend(responses_a)
-        backend_b = mock_backend(responses_b)
-
-        calls = register_all_discord_posts(mock_discord_api)
-
-        publisher = DiscordPublisher(registry, store)
-        engine_a = DebateEngine(store, publisher)
-        engine_b = DebateEngine(store, publisher)
+        sid_a = self.create_session(store, short_config, "topic A")
+        sid_b = self.create_session(store, short_config, "topic B")
 
         await asyncio.gather(
-            engine_a.run(sid_a, config, registry, backend_a),
-            engine_b.run(sid_b, config, registry, backend_b),
+            self.run_engine(
+                store,
+                registry,
+                publisher,
+                sid_a,
+                short_config,
+                mock_backend(["A devil", "A angel", self.synthesis_json(decision="A")]),
+            ),
+            self.run_engine(
+                store,
+                registry,
+                publisher,
+                sid_b,
+                short_config,
+                mock_backend(["B devil", "B angel", self.synthesis_json(decision="B")]),
+            ),
         )
 
-        lines_a = (
-            store._history_path(sid_a).read_text(encoding="utf-8").strip().split("\n")
-        )
-        turns_a = [
-            json.loads(line)
-            for line in lines_a
-            if json.loads(line).get("type") == "turn_content"
+        assert [turn["content"] for turn in self.turn_events(store, sid_a)] == [
+            "A devil",
+            "A angel",
         ]
-        assert len(turns_a) == 2
-        assert turns_a[0]["content"] == "A devil"
-        assert turns_a[1]["content"] == "A angel"
-
-        lines_b = (
-            store._history_path(sid_b).read_text(encoding="utf-8").strip().split("\n")
-        )
-        turns_b = [
-            json.loads(line)
-            for line in lines_b
-            if json.loads(line).get("type") == "turn_content"
+        assert [turn["content"] for turn in self.turn_events(store, sid_b)] == [
+            "B devil",
+            "B angel",
         ]
-        assert len(turns_b) == 2
-        assert turns_b[0]["content"] == "B devil"
-        assert turns_b[1]["content"] == "B angel"
-
-        # 2 turns * 2 sessions + 2 finals = 6
-        assert len(calls) == 6
+        assert len(discord_posts) == 6
