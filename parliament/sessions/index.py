@@ -6,6 +6,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from parliament.models import SessionStatus
+
 
 def _default_db_path() -> Path:
     return Path.home() / ".parliament" / "index.db"
@@ -41,15 +43,18 @@ class GlobalIndex:
     def register_session(
         self,
         session_id: str,
-        status: str,
+        status: SessionStatus,
         topic: str,
         created_at: str,
     ) -> None:
         """Register a new session in the global index."""
         with self._connection() as conn:
             conn.execute(
-                "INSERT INTO sessions (session_id, status, topic, created_at) VALUES (?, ?, ?, ?)",
-                (session_id, status, topic, created_at),
+                (
+                    "INSERT INTO sessions "
+                    "(session_id, status, topic, created_at) VALUES (?, ?, ?, ?)"
+                ),
+                (session_id, status.value, topic, created_at),
             )
             conn.commit()
 
@@ -57,15 +62,16 @@ class GlobalIndex:
         """List all registered sessions."""
         with self._connection() as conn:
             rows = conn.execute(
-                "SELECT session_id, status, topic, created_at FROM sessions ORDER BY created_at DESC"
+                "SELECT session_id, status, topic, created_at "
+                "FROM sessions ORDER BY created_at DESC"
             ).fetchall()
             return [dict(row) for row in rows]
 
-    def update_status(self, session_id: str, status: str) -> None:
+    def update_status(self, session_id: str, status: SessionStatus) -> None:
         """Update the status of a session."""
         with self._connection() as conn:
             conn.execute(
                 "UPDATE sessions SET status = ? WHERE session_id = ?",
-                (status, session_id),
+                (status.value, session_id),
             )
             conn.commit()

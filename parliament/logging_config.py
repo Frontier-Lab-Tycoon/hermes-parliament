@@ -1,12 +1,10 @@
 """Structured logging configuration with Rich console output."""
 
 import logging
-import sys
 
 import structlog
 from rich.console import Console
 from rich.logging import RichHandler
-
 
 _console = Console(stderr=True)
 

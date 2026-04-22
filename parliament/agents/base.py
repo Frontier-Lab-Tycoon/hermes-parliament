@@ -15,9 +15,7 @@ class AgentBackend(ABC):
     """Abstract agent backend."""
 
     @abstractmethod
-    async def invoke(
-        self, profile: str, prompt: str, timeout: int = 120
-    ) -> BackendResult:
+    async def invoke(self, profile: str, prompt: str, timeout: int = 120) -> BackendResult:
         """Invoke the backend for *profile* with *prompt*.
 
         Args:

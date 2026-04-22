@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from parliament.models import TurnRecord
+from parliament.models import PublishState, TurnRecord
 from parliament.sessions.store import SessionStore
 
 
@@ -48,7 +48,7 @@ class TestSessionStore:
             session_id, "t-1", "network error", retryable=True, attempt_publisher="bot"
         )
 
-        assert store.get_turn_publish_state(session_id, "t-1") == "failed_retryable"
+        assert store.get_turn_publish_state(session_id, "t-1") == PublishState.FAILED_RETRYABLE
         assert store.get_unpublished_turns(session_id) == [turn]
 
     async def test_delivery_log_overrides_stale_checkpoint(
@@ -63,7 +63,7 @@ class TestSessionStore:
             "msg-123",
             "participant_bot",
             "2026-04-21T12:00:00Z",
-            state="sent",
+            state=PublishState.SENT,
             attempt_publisher="participant_bot",
         )
         store._overwrite_checkpoint(
@@ -72,5 +72,5 @@ class TestSessionStore:
             pending_turn_uuid="t-1",
         )
 
-        assert store.get_turn_publish_state(session_id, "t-1") == "sent"
+        assert store.get_turn_publish_state(session_id, "t-1") == PublishState.SENT
         assert store.get_unpublished_turns(session_id) == []

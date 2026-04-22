@@ -30,12 +30,15 @@ class TestHermesBackend:
         mock_proc.pid = 1234
         mock_proc.kill = MagicMock()
         mock_proc.wait = AsyncMock(return_value=0)
-        with patch(
-            "parliament.agents.hermes.asyncio.create_subprocess_exec",
-            new=AsyncMock(return_value=mock_proc),
-        ), patch(
-            "parliament.agents.hermes.asyncio.wait_for",
-            side_effect=asyncio.TimeoutError,
+        with (
+            patch(
+                "parliament.agents.hermes.asyncio.create_subprocess_exec",
+                new=AsyncMock(return_value=mock_proc),
+            ),
+            patch(
+                "parliament.agents.hermes.asyncio.wait_for",
+                side_effect=asyncio.TimeoutError,
+            ),
         ):
             yield mock_proc
 
@@ -51,9 +54,7 @@ class TestHermesBackend:
     def nonzero_subprocess(self):
         mock_proc = MagicMock()
         mock_proc.returncode = -11
-        mock_proc.communicate = AsyncMock(
-            return_value=(b"partial output", b"Segmentation fault")
-        )
+        mock_proc.communicate = AsyncMock(return_value=(b"partial output", b"Segmentation fault"))
         mock_proc.pid = 1234
         with patch(
             "parliament.agents.hermes.asyncio.create_subprocess_exec",

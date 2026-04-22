@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 from parliament.agents.base import AgentBackend
-from parliament.models import BackendResult, SynthesisResult, TurnRecord
+from parliament.json_codec import dumps_pretty_json, loads_json
+from parliament.models import (
+    BackendResult,
+    ConsensusSignal,
+    JSONObject,
+    JSONValue,
+    SynthesisResult,
+    TurnRecord,
+    TurnRole,
+)
 
 _JSON_BLOCK_RE = re.compile(r"```json\s*(.*?)\s*```", re.DOTALL)
 
@@ -31,21 +39,32 @@ def _extract_json(text: str) -> str | None:
     return None
 
 
-def _validate_and_strip(data: dict[str, Any], schema: dict[str, Any]) -> dict[str, Any]:
+def _validate_and_strip(data: JSONObject, schema: JSONObject) -> JSONObject:
     """Strip extra fields and validate required fields / types against *schema*."""
     if "properties" in schema:
-        allowed = set(schema["properties"].keys())
+        properties = schema["properties"]
+        if not isinstance(properties, dict):
+            raise ValueError("schema.properties must be an object")
+        allowed = set(properties.keys())
         data = {k: v for k, v in data.items() if k in allowed}
 
     if "required" in schema:
-        for key in schema["required"]:
+        required = schema["required"]
+        if not isinstance(required, list):
+            raise ValueError("schema.required must be an array")
+        for key in required:
+            if not isinstance(key, str):
+                raise ValueError("schema.required entries must be strings")
             if key not in data:
                 raise ValueError(f"Missing required field: {key}")
 
     if "properties" in schema:
-        for key, prop_schema in schema["properties"].items():
+        properties = cast(dict[str, JSONValue], schema["properties"])
+        for key, prop_schema in properties.items():
             if key not in data:
                 continue
+            if not isinstance(prop_schema, dict):
+                raise ValueError(f"schema.properties.{key} must be an object")
             expected_type = prop_schema.get("type")
             value = data[key]
             if expected_type == "string" and not isinstance(value, str):
@@ -58,13 +77,38 @@ def _validate_and_strip(data: dict[str, Any], schema: dict[str, Any]) -> dict[st
     return data
 
 
-def _assemble_prompt(history: list[TurnRecord], schema: dict[str, Any]) -> str:
+def _str_field(data: JSONObject, key: str, default: str = "") -> str:
+    value = data.get(key, default)
+    return value if isinstance(value, str) else default
+
+
+def _float_field(data: JSONObject, key: str, default: float = 0.0) -> float:
+    value = data.get(key, default)
+    if isinstance(value, bool):
+        return default
+    return float(value) if isinstance(value, (int, float)) else default
+
+
+def _bool_field(data: JSONObject, key: str, default: bool = False) -> bool:
+    value = data.get(key, default)
+    return value if isinstance(value, bool) else default
+
+
+def _str_list_field(data: JSONObject, key: str) -> list[str] | None:
+    value = data.get(key)
+    if not isinstance(value, list):
+        return None
+    strings = [item for item in value if isinstance(item, str)]
+    return strings or None
+
+
+def _assemble_prompt(history: list[TurnRecord], schema: JSONObject) -> str:
     """Build the synthesis prompt from *history* and *schema*."""
     lines: list[str] = []
     for turn in history:
         lines.append(f"- Turn {turn.seq} ({turn.profile}): {turn.content}")
     history_text = "\n".join(lines) if lines else "(없음)"
-    schema_text = json.dumps(schema, ensure_ascii=False, indent=2)
+    schema_text = dumps_pretty_json(schema)
 
     return (
         "아래 토론 내용을 바탕으로 최종 결론을 JSON 형식으로 정리하세요.\n\n"
@@ -80,25 +124,18 @@ def _fallback_result(history: list[TurnRecord]) -> SynthesisResult:
     """Generate a rule-based fallback JSON when synthesis fails or no profile is available."""
     last_turns: dict[str, TurnRecord] = {}
     for turn in history:
-        if turn.role != "user":
+        if turn.role != TurnRole.USER:
             last_turns[turn.profile] = turn
 
     all_agree = False
     if last_turns:
-        all_agree = all(t.consensus_signal == "agree" for t in last_turns.values())
+        all_agree = all(t.consensus_signal == ConsensusSignal.AGREE for t in last_turns.values())
 
     disagreeing: list[str] = []
     if not all_agree and last_turns:
-        disagreeing = [p for p, t in last_turns.items() if t.consensus_signal != "agree"]
-
-    structured: dict[str, Any] = {
-        "decision": "inconclusive",
-        "confidence": 0.0,
-        "reasoning": "Synthesis failed after maximum retries.",
-        "consensus_reached": all_agree,
-    }
-    if disagreeing:
-        structured["disagreeing_profiles"] = disagreeing
+        disagreeing = [
+            p for p, t in last_turns.items() if t.consensus_signal != ConsensusSignal.AGREE
+        ]
 
     return SynthesisResult(
         decision="inconclusive",
@@ -106,7 +143,6 @@ def _fallback_result(history: list[TurnRecord]) -> SynthesisResult:
         reasoning="Synthesis failed after maximum retries.",
         consensus_reached=all_agree,
         disagreeing_profiles=disagreeing or None,
-        structured=structured,
     )
 
 
@@ -121,7 +157,7 @@ class Synthesizer:
         session_id: str,
         profile: str | None,
         history: list[TurnRecord],
-        schema: dict[str, Any],
+        schema: JSONObject,
     ) -> SynthesisResult:
         """Run synthesis for *session_id* using *profile* (or fallback)."""
         if profile is not None and not _profile_exists(profile):
@@ -134,39 +170,36 @@ class Synthesizer:
                 return _fallback_result(history)
 
         prompt = _assemble_prompt(history, schema)
-        last_error: str | None = None
 
         for _attempt in range(3):  # initial + 2 retries
             result: BackendResult = await self.backend.invoke(profile, prompt)
             if result.code != 0:
-                last_error = f"Backend error (code={result.code}): {result.error}"
                 continue
 
             json_text = _extract_json(result.text)
             if json_text is None:
-                last_error = "No JSON block found in response"
                 continue
 
             try:
-                data: dict[str, Any] = json.loads(json_text)
-            except json.JSONDecodeError as exc:
-                last_error = f"JSON decode error: {exc}"
+                parsed: JSONValue = loads_json(json_text)
+            except ValueError:
                 continue
+            if not isinstance(parsed, dict):
+                continue
+            data = parsed
 
             try:
                 data = _validate_and_strip(data, schema)
-            except ValueError as exc:
-                last_error = f"Validation error: {exc}"
+            except ValueError:
                 continue
 
             # Success path
             return SynthesisResult(
-                decision=data.get("decision", ""),
-                confidence=data.get("confidence", 0.0),
-                reasoning=data.get("reasoning", ""),
-                consensus_reached=data.get("consensus_reached", False),
-                disagreeing_profiles=data.get("disagreeing_profiles"),
-                structured=data,
+                decision=_str_field(data, "decision"),
+                confidence=_float_field(data, "confidence"),
+                reasoning=_str_field(data, "reasoning"),
+                consensus_reached=_bool_field(data, "consensus_reached"),
+                disagreeing_profiles=_str_list_field(data, "disagreeing_profiles"),
             )
 
         # All retries exhausted → fallback

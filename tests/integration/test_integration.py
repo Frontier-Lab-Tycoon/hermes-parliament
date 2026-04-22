@@ -13,12 +13,10 @@ from aioresponses import CallbackResult
 from parliament.debate.engine import DebateEngine
 from parliament.integrations.discord.publisher import DiscordPublisher
 from parliament.integrations.discord.registry import DiscordRegistry
-from parliament.models import TurnRecord
+from parliament.models import PublishState, SessionStatus, TurnRecord
 from parliament.sessions.store import SessionStore
 from parliament.topics.config import ProtocolConfig, TerminationConfig, TopicConfig
-
 from tests.conftest import MockBackend, register_all_discord_posts
-
 
 DISCORD_API_URL = "https://discord.com/api/v10/channels/999999999/messages"
 
@@ -61,9 +59,7 @@ class TestParliamentIntegration:
         return self.make_config(max_turns=10, early_stop=True)
 
     @pytest.fixture
-    def publisher(
-        self, registry: DiscordRegistry, store: SessionStore
-    ) -> DiscordPublisher:
+    def publisher(self, registry: DiscordRegistry, store: SessionStore) -> DiscordPublisher:
         return DiscordPublisher(registry, store)
 
     @pytest.fixture
@@ -169,13 +165,11 @@ class TestParliamentIntegration:
     ) -> None:
         sid = self.create_session(store, config, "topic")
 
-        await self.run_engine(
-            store, registry, publisher, sid, config, happy_path_backend
-        )
+        await self.run_engine(store, registry, publisher, sid, config, happy_path_backend)
 
         assert len(self.turn_events(store, sid)) == 4
         assert len(discord_posts) == 5
-        assert store.load_session(sid).status == "completed"
+        assert store.load_session(sid).status == SessionStatus.COMPLETED
 
     async def test_early_stop_finishes_after_consensus(
         self,
@@ -194,7 +188,7 @@ class TestParliamentIntegration:
 
         assert len(self.turn_events(store, sid)) == 3
         assert len(discord_posts) == 4
-        assert store.load_session(sid).status == "completed"
+        assert store.load_session(sid).status == SessionStatus.COMPLETED
 
     async def test_resume_republishes_in_flight_turn_without_duplicate_history(
         self,
@@ -222,7 +216,7 @@ class TestParliamentIntegration:
                 f"msg-{i}",
                 publisher_id,
                 "2026-04-22T00:00:00Z",
-                state="sent",
+                state=PublishState.SENT,
                 attempt_publisher=publisher_id,
             )
 
@@ -248,8 +242,8 @@ class TestParliamentIntegration:
 
         assert len(discord_posts) == 3
         assert len(self.turn_events(store, sid)) == 4
-        assert store.get_turn_publish_state(sid, "t-2") == "sent"
-        assert store.get_turn_publish_state(sid, "t-3") == "sent"
+        assert store.get_turn_publish_state(sid, "t-2") == PublishState.SENT
+        assert store.get_turn_publish_state(sid, "t-3") == PublishState.SENT
 
     async def test_participant_publish_failure_falls_back_and_continues(
         self,
@@ -262,14 +256,12 @@ class TestParliamentIntegration:
     ) -> None:
         sid = self.create_session(store, config, "topic")
 
-        await self.run_engine(
-            store, registry, publisher, sid, config, happy_path_backend
-        )
+        await self.run_engine(store, registry, publisher, sid, config, happy_path_backend)
 
         states = [store.get_turn_publish_state(sid, f"t-{i}") for i in range(4)]
-        assert "sent_via_fallback" in states
+        assert PublishState.SENT_VIA_FALLBACK in states
         assert len(self.turn_events(store, sid)) == 4
-        assert store.load_session(sid).status == "completed"
+        assert store.load_session(sid).status == SessionStatus.COMPLETED
 
     async def test_agent_timeout_is_recorded_and_debate_continues(
         self,
@@ -292,7 +284,7 @@ class TestParliamentIntegration:
             "angel turn 2",
         ]
         assert len(discord_posts) == 5
-        assert store.load_session(sid).status == "completed"
+        assert store.load_session(sid).status == SessionStatus.COMPLETED
 
     async def test_concurrent_sessions_are_isolated(
         self,

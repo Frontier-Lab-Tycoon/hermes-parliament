@@ -52,18 +52,14 @@ class DiscordRegistry:
 
     def resolve_profile(self, discord_user_id: str) -> HermesProfile:
         if discord_user_id not in self._profiles:
-            raise KeyError(
-                f"No profile found for discord user id: {discord_user_id}"
-            )
+            raise KeyError(f"No profile found for discord user id: {discord_user_id}")
         return self._profiles[discord_user_id]
 
     def resolve_by_hermes_profile(self, hermes_profile: str) -> HermesProfile:
         for profile in self._profiles.values():
             if profile.hermes_profile == hermes_profile:
                 return profile
-        raise KeyError(
-            f"No profile found for hermes profile: {hermes_profile}"
-        )
+        raise KeyError(f"No profile found for hermes profile: {hermes_profile}")
 
 
 def load_registry(path: str) -> DiscordRegistry:
@@ -88,9 +84,7 @@ def load_registry(path: str) -> DiscordRegistry:
 
         token = info.get("discord_bot_token", "")
         if not token:
-            raise ValueError(
-                f"Discord bot token for profile {name} is empty after substitution"
-            )
+            raise ValueError(f"Discord bot token for profile {name} is empty after substitution")
 
         # Validate Hermes profile path exists
         profile_path = Path.home() / ".hermes" / "profiles" / hermes_profile

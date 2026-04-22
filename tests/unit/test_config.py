@@ -13,9 +13,7 @@ from parliament.topics.config import load_topic
 
 class TestConfigValidation:
     @pytest.fixture
-    def empty_hermes_home(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> Path:
+    def empty_hermes_home(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
         fake_home = tmp_path / "home"
         fake_home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: fake_home)

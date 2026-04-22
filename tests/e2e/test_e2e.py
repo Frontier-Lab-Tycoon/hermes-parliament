@@ -13,10 +13,10 @@ from parliament.debate.engine import DebateEngine
 from parliament.integrations.discord.bot import _run_parliament_handler
 from parliament.integrations.discord.publisher import DiscordPublisher
 from parliament.integrations.discord.registry import DiscordRegistry
+from parliament.models import SessionStatus
 from parliament.sessions.index import GlobalIndex
 from parliament.sessions.store import SessionStore
 from parliament.topics.config import ProtocolConfig, TerminationConfig, TopicConfig
-
 from tests.conftest import MockBackend, register_all_discord_posts
 
 
@@ -65,9 +65,7 @@ class TestE2EEngineFlow:
         )
 
     @pytest.fixture
-    def engine(
-        self, store: SessionStore, registry: DiscordRegistry
-    ) -> DebateEngine:
+    def engine(self, store: SessionStore, registry: DiscordRegistry) -> DebateEngine:
         return DebateEngine(store, DiscordPublisher(registry, store))
 
     @staticmethod
@@ -107,7 +105,7 @@ class TestE2EEngineFlow:
             "architect-devil",
             "architect-angel",
         ]
-        assert store.load_session(session_id).status == "completed"
+        assert store.load_session(session_id).status == SessionStatus.COMPLETED
         assert len(discord_posts) == 3
 
 

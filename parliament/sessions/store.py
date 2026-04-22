@@ -3,38 +3,78 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import cast
 
-from parliament.models import Checkpoint, DeliveryEvent, PublishState, Session, TurnRecord
+import orjson
+
+from parliament.json_codec import dumps_json, loads_json_object
+from parliament.models import (
+    Checkpoint,
+    DeliveryEvent,
+    HistoryRecordType,
+    JSONObject,
+    JSONValue,
+    PublishState,
+    Session,
+    SessionStatus,
+    TurnRecord,
+    utc_timestamp,
+)
 
 
 def _default_parliament_dir() -> Path:
     return Path.home() / ".parliament"
 
 
-def _safe_jsonl_replay(path: Path) -> list[dict[str, Any]]:
+def _safe_jsonl_replay(path: Path) -> list[JSONObject]:
     """Replay a JSONL file, skipping the last line if it's partial/invalid JSON."""
     lines: list[str] = []
     if path.exists():
         with path.open("r", encoding="utf-8") as f:
             lines = f.readlines()
 
-    records: list[dict[str, Any]] = []
+    records: list[JSONObject] = []
     for i, line in enumerate(lines):
         line = line.strip()
         if not line:
             continue
         try:
-            records.append(json.loads(line))
-        except json.JSONDecodeError:
+            record = loads_json_object(line)
+        except orjson.JSONDecodeError:
             if i == len(lines) - 1:
                 # Last line is partial/invalid — skip with a warning
                 continue
             raise
+        records.append(record)
     return records
+
+
+def _json_object_from_file(path: Path) -> JSONObject:
+    """Read a JSON object from *path*."""
+    try:
+        return loads_json_object(path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise ValueError(f"Expected JSON object in {path}") from exc
+
+
+def _record_type(record: JSONObject) -> HistoryRecordType | None:
+    record_type = record.get("type")
+    if not isinstance(record_type, str):
+        return None
+    try:
+        return HistoryRecordType(record_type)
+    except ValueError:
+        return None
+
+
+def _turn_records(records: list[JSONObject]) -> list[TurnRecord]:
+    return [
+        TurnRecord.model_validate(record)
+        for record in records
+        if _record_type(record) == HistoryRecordType.TURN_CONTENT
+    ]
 
 
 class SessionStore:
@@ -61,7 +101,7 @@ class SessionStore:
         self,
         topic: str,
         participants: list[str],
-        config: dict[str, Any],
+        config: JSONObject,
     ) -> str:
         """Create a new session directory and return its ID."""
         session_id = str(uuid.uuid4())
@@ -72,23 +112,21 @@ class SessionStore:
         self._history_path(session_id).write_text("", encoding="utf-8")
         self._delivery_path(session_id).write_text("", encoding="utf-8")
 
-        from datetime import datetime, timezone
-
-        created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        full_config = {**config, "topic": topic, "participants": participants}
-
-        checkpoint = {
-            "session_id": session_id,
-            "status": "running",
-            "config": full_config,
-            "created_at": created_at,
-            "next_turn_index": 0,
-            "next_speaker": None,
-            "last_safe_published_turn_uuid": None,
-            "pending_turn_uuid": None,
+        created_at = utc_timestamp()
+        full_config: JSONObject = {
+            **config,
+            "topic": topic,
+            "participants": cast(JSONValue, list(participants)),
         }
+
+        checkpoint = Checkpoint(
+            session_id=session_id,
+            status=SessionStatus.RUNNING,
+            config=full_config,
+            created_at=created_at,
+        )
         self._checkpoint_path(session_id).write_text(
-            json.dumps(checkpoint, ensure_ascii=False),
+            dumps_json(checkpoint.model_dump(mode="json")),
             encoding="utf-8",
         )
 
@@ -98,21 +136,21 @@ class SessionStore:
         """Append a turn to history.jsonl."""
         path = self._history_path(session_id)
         record = {
-            "type": "turn_content",
+            "type": HistoryRecordType.TURN_CONTENT,
             **turn.model_dump(),
         }
         with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            f.write(dumps_json(record) + "\n")
 
-    def append_raw(self, session_id: str, record: dict[str, Any]) -> None:
+    def append_raw(self, session_id: str, record: JSONObject) -> None:
         """Append a raw JSON record to history.jsonl."""
         path = self._history_path(session_id)
         with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            f.write(dumps_json(record) + "\n")
 
     def generate_nonce(self, session_id: str, turn_uuid: str, publisher_identity: str) -> str:
         """Deterministic 25-character nonce hash."""
-        raw = f"{session_id}:{turn_uuid}:{publisher_identity}".encode("utf-8")
+        raw = f"{session_id}:{turn_uuid}:{publisher_identity}".encode()
         return hashlib.sha256(raw).hexdigest()[:25]
 
     def _append_delivery_event(
@@ -120,7 +158,7 @@ class SessionStore:
         session_id: str,
         turn_uuid: str,
         new_state: PublishState,
-        metadata: dict[str, Any],
+        metadata: JSONObject,
     ) -> None:
         """Append a delivery event to delivery.jsonl."""
         path = self._delivery_path(session_id)
@@ -128,7 +166,10 @@ class SessionStore:
         if path.exists():
             records = _safe_jsonl_replay(path)
             if records:
-                seq = records[-1]["seq"] + 1
+                last_seq = records[-1].get("seq")
+                if not isinstance(last_seq, int):
+                    raise ValueError(f"Expected integer seq in {path}")
+                seq = last_seq + 1
 
         event = DeliveryEvent(
             seq=seq,
@@ -137,21 +178,21 @@ class SessionStore:
             metadata=metadata,
         )
         with path.open("a", encoding="utf-8") as f:
-            f.write(event.model_dump_json() + "\n")
+            f.write(dumps_json(event.model_dump(mode="json")) + "\n")
 
-    def _overwrite_checkpoint(self, session_id: str, **updates: Any) -> None:
+    def _overwrite_checkpoint(self, session_id: str, **updates: JSONValue) -> None:
         """Read checkpoint, apply updates, and overwrite."""
         cp_path = self._checkpoint_path(session_id)
-        checkpoint = json.loads(cp_path.read_text(encoding="utf-8"))
+        checkpoint = _json_object_from_file(cp_path)
         checkpoint.update(updates)
-        cp_path.write_text(json.dumps(checkpoint, ensure_ascii=False), encoding="utf-8")
+        cp_path.write_text(dumps_json(checkpoint), encoding="utf-8")
 
     def mark_turn_publish_pending(self, session_id: str, turn_uuid: str) -> None:
         """Mark turn as pending publish."""
         self._append_delivery_event(
             session_id,
             turn_uuid,
-            PublishState.pending,
+            PublishState.PENDING,
             {},
         )
 
@@ -167,7 +208,7 @@ class SessionStore:
         self._append_delivery_event(
             session_id,
             turn_uuid,
-            PublishState.in_flight,
+            PublishState.IN_FLIGHT,
             {
                 "nonce": nonce,
                 "intended_publisher": intended_publisher,
@@ -187,7 +228,7 @@ class SessionStore:
         self._append_delivery_event(
             session_id,
             turn_uuid,
-            PublishState.fallback_pending,
+            PublishState.FALLBACK_PENDING,
             {
                 "error": error,
                 "attempt_publisher": attempt_publisher,
@@ -202,14 +243,14 @@ class SessionStore:
         message_id: str,
         published_by: str,
         published_at: str,
-        state: str,
+        state: PublishState,
         attempt_publisher: str,
     ) -> None:
         """Mark turn as published and update checkpoint."""
         self._append_delivery_event(
             session_id,
             turn_uuid,
-            PublishState(state),
+            state,
             {
                 "message_id": message_id,
                 "published_by": published_by,
@@ -232,7 +273,7 @@ class SessionStore:
         attempt_publisher: str,
     ) -> None:
         """Mark turn as failed and update checkpoint."""
-        new_state = PublishState.failed_retryable if retryable else PublishState.failed_terminal
+        new_state = PublishState.FAILED_RETRYABLE if retryable else PublishState.FAILED_TERMINAL
         self._append_delivery_event(
             session_id,
             turn_uuid,
@@ -250,14 +291,17 @@ class SessionStore:
         records = _safe_jsonl_replay(path)
         states: dict[str, PublishState] = {}
         for rec in records:
-            states[rec["turn_uuid"]] = PublishState(rec["new_state"])
+            turn_uuid = rec.get("turn_uuid")
+            new_state = rec.get("new_state")
+            if not isinstance(turn_uuid, str) or not isinstance(new_state, str):
+                raise ValueError(f"Invalid delivery record in {path}")
+            states[turn_uuid] = PublishState(new_state)
         return states
 
-    def get_turn_publish_state(self, session_id: str, turn_uuid: str) -> str | None:
+    def get_turn_publish_state(self, session_id: str, turn_uuid: str) -> PublishState | None:
         """Return the latest publish state for a turn."""
         states = self._replay_delivery(session_id)
-        state = states.get(turn_uuid)
-        return state.value if state else None
+        return states.get(turn_uuid)
 
     def get_turn_nonce(
         self,
@@ -272,25 +316,25 @@ class SessionStore:
         """Return turns whose latest publish state is not sent/sent_via_fallback."""
         history_path = self._history_path(session_id)
         records = _safe_jsonl_replay(history_path)
-        turns = [TurnRecord(**rec) for rec in records if rec.get("type") == "turn_content"]
+        turns = _turn_records(records)
 
         states = self._replay_delivery(session_id)
-        published_states = {PublishState.sent, PublishState.sent_via_fallback}
+        published_states = {PublishState.SENT, PublishState.SENT_VIA_FALLBACK}
         return [t for t in turns if states.get(t.turn_uuid) not in published_states]
 
     def load_session(self, session_id: str) -> Session:
         """Replay both jsonl files and join into a Session object."""
         cp_path = self._checkpoint_path(session_id)
-        checkpoint = json.loads(cp_path.read_text(encoding="utf-8"))
+        checkpoint = Checkpoint.model_validate(_json_object_from_file(cp_path))
 
         history_path = self._history_path(session_id)
         records = _safe_jsonl_replay(history_path)
-        turns = [TurnRecord(**rec) for rec in records if rec.get("type") == "turn_content"]
+        turns = _turn_records(records)
 
         return Session(
-            session_id=checkpoint["session_id"],
-            status=checkpoint.get("status", "running"),
-            config=checkpoint.get("config", {}),
+            session_id=checkpoint.session_id,
+            status=checkpoint.status,
+            config=checkpoint.config,
             turns=turns,
-            created_at=checkpoint.get("created_at", ""),
+            created_at=checkpoint.created_at,
         )

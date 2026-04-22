@@ -46,9 +46,7 @@ class TestDebateEngine:
         config = TopicConfig(
             participant_1="p1",
             participant_2="p2",
-            protocol=ProtocolConfig(
-                termination=TerminationConfig(max_turns=4, min_turns=2)
-            ),
+            protocol=ProtocolConfig(termination=TerminationConfig(max_turns=4, min_turns=2)),
         )
         return sid, config
 
@@ -93,12 +91,8 @@ class TestDebateEngine:
         assert DebateEngine.check_termination(first_agree, config) is False
         assert DebateEngine.check_termination(both_agree, config) is True
 
-    async def test_timeout_turn_is_recorded_as_timeout(
-        self, store: SessionStore
-    ) -> None:
-        turn = await DebateEngine(store, NoOpPublisher()).run_turn(
-            "p1", "prompt", TimeoutBackend()
-        )
+    async def test_timeout_turn_is_recorded_as_timeout(self, store: SessionStore) -> None:
+        turn = await DebateEngine(store, NoOpPublisher()).run_turn("p1", "prompt", TimeoutBackend())
         assert turn.content == "[TIMEOUT] 응답 없음"
         assert turn.profile == "p1"
 

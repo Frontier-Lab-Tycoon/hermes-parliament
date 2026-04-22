@@ -40,9 +40,7 @@ class TestContextAssembly:
         return fake_home
 
     @pytest.fixture
-    def overflow_session(
-        self, store: SessionStore
-    ) -> tuple[str, list[TurnRecord]]:
+    def overflow_session(self, store: SessionStore) -> tuple[str, list[TurnRecord]]:
         sid = store.create_session("topic", ["p1", "p2"], {})
         history = [
             TurnRecord(

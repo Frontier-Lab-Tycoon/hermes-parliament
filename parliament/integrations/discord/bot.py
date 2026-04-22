@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import asyncio
-import os
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
 import discord
 from discord import app_commands
 
-from parliament.topics.config import ProtocolConfig, TerminationConfig, TopicConfig, load_topic
 from parliament.integrations.discord.registry import DiscordRegistry, load_registry
+from parliament.models import SessionStatus
 from parliament.sessions.index import GlobalIndex
 from parliament.sessions.store import SessionStore
+from parliament.topics.config import ProtocolConfig, TerminationConfig, TopicConfig, load_topic
 
 
 async def _run_parliament_handler(
@@ -30,16 +31,12 @@ async def _run_parliament_handler(
     """Core logic for /parliament command handler."""
     # Validate: same participants
     if participant_1_id == participant_2_id:
-        await interaction.response.send_message(
-            "서로 다른 봇을 선택하세요", ephemeral=True
-        )
+        await interaction.response.send_message("서로 다른 봇을 선택하세요", ephemeral=True)
         return
 
     # Validate: max_turns >= 2
     if max_turns < 2:
-        await interaction.response.send_message(
-            "max_turns는 2 이상이어야 합니다", ephemeral=True
-        )
+        await interaction.response.send_message("max_turns는 2 이상이어야 합니다", ephemeral=True)
         return
 
     # Lookup registry
@@ -47,9 +44,7 @@ async def _run_parliament_handler(
         profile_1 = registry.resolve_profile(participant_1_id)
         profile_2 = registry.resolve_profile(participant_2_id)
     except KeyError:
-        await interaction.response.send_message(
-            "등록되지 않은 봇입니다", ephemeral=True
-        )
+        await interaction.response.send_message("등록되지 않은 봇입니다", ephemeral=True)
         return
 
     # Load topic config
@@ -57,9 +52,7 @@ async def _run_parliament_handler(
         topic_config = load_topic(default_topic_path)
         config = topic_config.model_dump()
         config.setdefault("session", {})["topic"] = topic
-        config.setdefault("protocol", {}).setdefault("termination", {})[
-            "max_turns"
-        ] = max_turns
+        config.setdefault("protocol", {}).setdefault("termination", {})["max_turns"] = max_turns
     else:
         topic_config = TopicConfig(
             session={"topic": topic, "max_turns": max_turns},
@@ -74,10 +67,10 @@ async def _run_parliament_handler(
     session_id = store.create_session(topic, participants, config)
 
     # Register in global index
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    index.register_session(session_id, "running", topic, created_at)
+    created_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    index.register_session(session_id, SessionStatus.RUNNING, topic, created_at)
 
     # Respond ephemerally
     await interaction.response.send_message(

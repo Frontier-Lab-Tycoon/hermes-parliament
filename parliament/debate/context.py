@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
-from parliament.topics.config import TopicConfig
-from parliament.models import TurnRecord
+from parliament.models import PromptSnapshotEvent, SummaryEvent, TurnRecord, TurnRole
 from parliament.sessions.store import SessionStore
+from parliament.topics.config import TopicConfig
 
 
 def load_soul_md(profile: str) -> str | None:
@@ -56,7 +54,7 @@ class ContextAssembler:
     def _protected_turns(self, profile: str, history: list[TurnRecord]) -> set[str]:
         """Return the set of turn_uuids that must never be summarized/excluded."""
         protected: set[str] = set()
-        if history and history[0].role == "user":
+        if history and history[0].role == TurnRole.USER:
             # The very first user topic turn.
             protected.add(history[0].turn_uuid)
         # The current participant's most recent previous turn.
@@ -81,37 +79,28 @@ class ContextAssembler:
     def _write_summary_event(self, turn: TurnRecord, summary: str) -> None:
         if not self.store or not self.session_id:
             return
-        event: dict[str, Any] = {
-            "type": "summary",
-            "turn_uuid": turn.turn_uuid,
-            "seq": turn.seq,
-            "content": summary,
-            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        }
-        self.store.append_raw(self.session_id, event)
+        self.store.append_raw(
+            self.session_id,
+            SummaryEvent(turn_uuid=turn.turn_uuid, seq=turn.seq, content=summary).to_record(),
+        )
 
     def _write_prompt_snapshot(self, history: list[TurnRecord]) -> None:
         if not self.store or not self.session_id:
             return
         included = [t for t in history if t.turn_uuid not in self._excluded_turn_uuids]
         window = [included[0].seq, included[-1].seq] if included else [0, 0]
-        event: dict[str, Any] = {
-            "type": "prompt_snapshot",
-            "history_window": window,
-            "excluded_turn_uuids": sorted(self._excluded_turn_uuids),
-            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        }
-        self.store.append_raw(self.session_id, event)
+        self.store.append_raw(
+            self.session_id,
+            PromptSnapshotEvent(
+                history_window=(window[0], window[1]),
+                excluded_turn_uuids=sorted(self._excluded_turn_uuids),
+            ).to_record(),
+        )
 
-    def _apply_soft_limit(
-        self, history: list[TurnRecord], protected: set[str]
-    ) -> None:
+    def _apply_soft_limit(self, history: list[TurnRecord], protected: set[str]) -> None:
         """Exclude the oldest non-protected turn from future prompts."""
         for turn in history:
-            if (
-                turn.turn_uuid not in protected
-                and turn.turn_uuid not in self._excluded_turn_uuids
-            ):
+            if turn.turn_uuid not in protected and turn.turn_uuid not in self._excluded_turn_uuids:
                 self._excluded_turn_uuids.add(turn.turn_uuid)
                 break
         self._write_prompt_snapshot(history)
@@ -142,12 +131,7 @@ class ContextAssembler:
         threshold_70 = int(self.token_threshold * 0.7)
         threshold_80 = int(self.token_threshold * 0.8)
 
-        if (
-            history_tokens > threshold_70
-            and self.summarizer
-            and self.store
-            and self.session_id
-        ):
+        if history_tokens > threshold_70 and self.summarizer and self.store and self.session_id:
             protected = self._protected_turns(profile, history)
             candidate = self._find_oldest_summarizable(history, protected)
 

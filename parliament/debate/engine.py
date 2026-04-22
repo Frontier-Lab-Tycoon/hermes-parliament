@@ -2,19 +2,25 @@
 
 from __future__ import annotations
 
-import json
 import uuid
-from pathlib import Path
-from typing import Any
 
 from parliament.agents.base import AgentBackend, BackendTimeoutError
-from parliament.topics.config import ProtocolConfig, TopicConfig
 from parliament.debate.context import ContextAssembler
-from parliament.integrations.discord.registry import DiscordRegistry
-from parliament.models import BackendResult, TurnRecord
-from parliament.integrations.base import Publisher
-from parliament.sessions.store import SessionStore
 from parliament.debate.synthesis import Synthesizer
+from parliament.integrations.base import Publisher
+from parliament.integrations.discord.registry import DiscordRegistry
+from parliament.json_codec import loads_json
+from parliament.models import (
+    BackendResult,
+    ConsensusSignal,
+    JSONObject,
+    JSONValue,
+    SessionStatus,
+    TurnRecord,
+    TurnRole,
+)
+from parliament.sessions.store import SessionStore
+from parliament.topics.config import ProtocolConfig, TopicConfig
 
 
 class DebateEngine:
@@ -40,7 +46,7 @@ class DebateEngine:
         return ordering[len(turns) % len(ordering)]
 
     @staticmethod
-    def parse_output(raw_text: str) -> tuple[str, str | None, dict[str, Any] | None]:
+    def parse_output(raw_text: str) -> tuple[str, ConsensusSignal | None, JSONObject | None]:
         """Parse agent output, extracting optional consensus signals.
 
         Returns ``(content, consensus_signal, structured)``.
@@ -50,7 +56,8 @@ class DebateEngine:
         if marker in raw_text:
             content, _, after = raw_text.partition(marker)
             content = content.rstrip()
-            signal = after.strip().splitlines()[0].strip() if after.strip() else None
+            raw_signal = after.strip().splitlines()[0].strip() if after.strip() else None
+            signal = ConsensusSignal.parse(raw_signal)
             return content, signal, None
 
         # 2. JSON tail
@@ -71,10 +78,13 @@ class DebateEngine:
             if end != -1:
                 json_str = text[start : end + 1]
                 try:
-                    data: dict[str, Any] = json.loads(json_str)
-                except json.JSONDecodeError:
+                    parsed: JSONValue = loads_json(json_str)
+                except ValueError:
                     return text, None, None
-                signal = data.pop("consensus_signal", None)
+                if not isinstance(parsed, dict):
+                    return text, None, None
+                data = parsed
+                signal = ConsensusSignal.parse(data.pop("consensus_signal", None))
                 structured = data if data else None
                 content = text[:start].rstrip()
                 return content, signal, structured
@@ -88,12 +98,14 @@ class DebateEngine:
             return True
 
         if config.termination.early_stop and len(turns) >= config.termination.min_turns:
-            latest_signals: dict[str, str | None] = {}
+            latest_signals: dict[str, ConsensusSignal | None] = {}
             for turn in turns:
-                if turn.role == "user":
+                if turn.role == TurnRole.USER:
                     continue
                 latest_signals[turn.profile] = turn.consensus_signal
-            if latest_signals and all(signal == "agree" for signal in latest_signals.values()):
+            if latest_signals and all(
+                signal == ConsensusSignal.AGREE for signal in latest_signals.values()
+            ):
                 return True
 
         return False
@@ -116,7 +128,7 @@ class DebateEngine:
                 turn_uuid=str(uuid.uuid4()),
                 seq=0,
                 profile=profile,
-                role="debater",
+                role=TurnRole.DEBATER,
                 content="[TIMEOUT] 응답 없음",
                 structured=None,
                 consensus_signal=None,
@@ -126,7 +138,7 @@ class DebateEngine:
             turn_uuid=str(uuid.uuid4()),
             seq=0,
             profile=profile,
-            role="debater",
+            role=TurnRole.DEBATER,
             content=content,
             structured=structured,
             consensus_signal=signal,
@@ -154,7 +166,7 @@ class DebateEngine:
             cfg_dict = dict(session.config)
             cfg_dict.pop("topic", None)
             cfg_dict.pop("participants", None)
-            config = TopicConfig(**cfg_dict)
+            config = TopicConfig.model_validate(cfg_dict)
 
         # -- Resolve ordering (participants) ------------------------------------
         ordering: list[str] = []
@@ -168,7 +180,12 @@ class DebateEngine:
                 ordering = [p.hermes_profile for p in registry._profiles.values()]
         else:
             session = self.store.load_session(session_id)
-            ordering = session.config.get("participants", [])
+            participants = session.config.get("participants", [])
+            ordering = (
+                [participant for participant in participants if isinstance(participant, str)]
+                if isinstance(participants, list)
+                else []
+            )
             if not ordering and config.participant_1 and config.participant_2:
                 ordering = [config.participant_1, config.participant_2]
 
@@ -209,7 +226,8 @@ class DebateEngine:
 
         # -- Synthesis ----------------------------------------------------------
         if config.synthesis.enabled:
-            schema = config.synthesis.output.get("schema", {})
+            schema_value = config.synthesis.output.get("schema", {})
+            schema: JSONObject = schema_value if isinstance(schema_value, dict) else {}
             synth = Synthesizer(backend)
             try:
                 result = await synth.run(
@@ -228,7 +246,7 @@ class DebateEngine:
                 await self.publisher.send_final(coord_token, result)
 
         # -- Finalise checkpoint ------------------------------------------------
-        self.store._overwrite_checkpoint(session_id, status="completed")
+        self.store._overwrite_checkpoint(session_id, status=SessionStatus.COMPLETED)
 
     # ------------------------------------------------------------------
     # Prompt assembly

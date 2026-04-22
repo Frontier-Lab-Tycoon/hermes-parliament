@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -10,10 +9,10 @@ import pytest
 from aioresponses import CallbackResult, aioresponses
 
 from parliament.agents.base import AgentBackend
-from parliament.integrations.discord.registry import DiscordRegistry, HermesProfile
 from parliament.integrations.discord.publisher import DiscordPublisher
-from parliament.sessions.index import GlobalIndex
+from parliament.integrations.discord.registry import DiscordRegistry, HermesProfile
 from parliament.models import BackendResult
+from parliament.sessions.index import GlobalIndex
 from parliament.sessions.store import SessionStore
 
 
@@ -70,6 +69,7 @@ class MockBackend(AgentBackend):
     async def invoke(self, profile: str, prompt: str, timeout: int = 120) -> BackendResult:
         if self.timeout_profile and profile == self.timeout_profile:
             from parliament.agents.base import BackendTimeoutError
+
             raise BackendTimeoutError("timed out")
         text = self.responses[self.index % len(self.responses)]
         self.index += 1
@@ -83,6 +83,7 @@ class MockBackend(AgentBackend):
 def mock_backend():
     def _make(responses: list[str], timeout_profile: str | None = None) -> MockBackend:
         return MockBackend(responses, timeout_profile)
+
     return _make
 
 
@@ -104,7 +105,9 @@ def make_publisher(registry: DiscordRegistry, store: SessionStore) -> DiscordPub
     return DiscordPublisher(registry, store)
 
 
-def register_all_discord_posts(mock_discord_api, channel_id: str = "999999999") -> list[dict[str, Any]]:
+def register_all_discord_posts(
+    mock_discord_api, channel_id: str = "999999999"
+) -> list[dict[str, Any]]:
     """Register a catch-all POST handler for Discord messages and return a call log."""
     url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
     calls: list[dict[str, Any]] = []

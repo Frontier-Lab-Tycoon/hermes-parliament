@@ -10,9 +10,8 @@ from aioresponses import aioresponses
 
 from parliament.integrations.discord.publisher import DiscordPublisher
 from parliament.integrations.discord.registry import DiscordRegistry, HermesProfile
-from parliament.models import TurnRecord
+from parliament.models import PublishState, TurnRecord
 from parliament.sessions.store import SessionStore
-
 
 DISCORD_API_URL = "https://discord.com/api/v10/channels/999999999/messages"
 
@@ -40,9 +39,7 @@ class TestDiscordPublisher:
         )
 
     @pytest.fixture
-    def publisher(
-        self, registry: DiscordRegistry, store: SessionStore
-    ) -> DiscordPublisher:
+    def publisher(self, registry: DiscordRegistry, store: SessionStore) -> DiscordPublisher:
         return DiscordPublisher(registry, store)
 
     @pytest.fixture
@@ -82,7 +79,7 @@ class TestDiscordPublisher:
 
     @pytest.fixture
     def timeout_post(self, discord_api):
-        discord_api.post(DISCORD_API_URL, exception=asyncio.TimeoutError(), repeat=4)
+        discord_api.post(DISCORD_API_URL, exception=TimeoutError(), repeat=4)
 
     @pytest.fixture
     def rate_limited_post(self, discord_api, monkeypatch: pytest.MonkeyPatch) -> list[float]:
@@ -107,7 +104,7 @@ class TestDiscordPublisher:
             "msg-old",
             "participant_bot",
             "2026-04-21T12:00:00Z",
-            state="sent",
+            state=PublishState.SENT,
             attempt_publisher="participant_bot",
         )
         return turn_record
@@ -123,7 +120,10 @@ class TestDiscordPublisher:
         msg_id = await publisher.send_turn(session_id, persisted_turn)
 
         assert msg_id == "msg-123"
-        assert store.get_turn_publish_state(session_id, persisted_turn.turn_uuid) == "sent"
+        assert (
+            store.get_turn_publish_state(session_id, persisted_turn.turn_uuid)
+            == PublishState.SENT
+        )
 
     async def test_unauthorized_participant_publish_falls_back_to_coordinator(
         self,
@@ -138,7 +138,7 @@ class TestDiscordPublisher:
         assert msg_id == "msg-fallback"
         assert (
             store.get_turn_publish_state(session_id, persisted_turn.turn_uuid)
-            == "sent_via_fallback"
+            == PublishState.SENT_VIA_FALLBACK
         )
 
     async def test_network_timeout_is_retryable_failure(
@@ -154,7 +154,7 @@ class TestDiscordPublisher:
         assert msg_id is None
         assert (
             store.get_turn_publish_state(session_id, persisted_turn.turn_uuid)
-            == "failed_retryable"
+            == PublishState.FAILED_RETRYABLE
         )
 
     async def test_rate_limit_retries_and_succeeds(
@@ -169,7 +169,10 @@ class TestDiscordPublisher:
 
         assert msg_id == "msg-429-ok"
         assert rate_limited_post == [0.5]
-        assert store.get_turn_publish_state(session_id, persisted_turn.turn_uuid) == "sent"
+        assert (
+            store.get_turn_publish_state(session_id, persisted_turn.turn_uuid)
+            == PublishState.SENT
+        )
 
     async def test_already_sent_turn_is_not_republished(
         self,

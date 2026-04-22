@@ -37,9 +37,7 @@ def run_bot(registry: str | None, topic: str | None) -> None:
     from parliament.integrations.discord.bot import ParliamentBot
     from parliament.integrations.discord.registry import load_registry
 
-    registry_path = registry or str(
-        Path.home() / ".parliament" / "discord-registry.yaml"
-    )
+    registry_path = registry or str(Path.home() / ".parliament" / "discord-registry.yaml")
 
     # Try environment first, then registry
     token = os.environ.get("COORDINATOR_BOT_TOKEN")

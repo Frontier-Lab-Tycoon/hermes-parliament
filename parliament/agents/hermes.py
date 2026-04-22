@@ -28,9 +28,7 @@ class HermesBackend(AgentBackend):
     def __init__(self) -> None:
         self._handles: dict[object, asyncio.subprocess.Process] = {}
 
-    async def invoke(
-        self, profile: str, prompt: str, timeout: int = 120
-    ) -> BackendResult:
+    async def invoke(self, profile: str, prompt: str, timeout: int = 120) -> BackendResult:
         """Run ``hermes -p <profile> chat -q <prompt>``.
 
         Args:
@@ -61,15 +59,11 @@ class HermesBackend(AgentBackend):
 
         self._handles[proc.pid] = proc
         try:
-            stdout_b, stderr_b = await asyncio.wait_for(
-                proc.communicate(), timeout=timeout
-            )
-        except asyncio.TimeoutError as exc:
+            stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except TimeoutError as exc:
             proc.kill()
             await proc.wait()
-            raise BackendTimeoutError(
-                f"hermes invocation timed out after {timeout}s"
-            ) from exc
+            raise BackendTimeoutError(f"hermes invocation timed out after {timeout}s") from exc
         finally:
             self._handles.pop(proc.pid, None)
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from parliament.models import TurnRecord
+from parliament.models import SynthesisResult, TurnRecord
 
 
 class Publisher(ABC):
@@ -18,7 +18,9 @@ class Publisher(ABC):
         """
 
     @abstractmethod
-    async def send_final(self, coordinator_token: str, synthesis_result) -> str | None:
+    async def send_final(
+        self, coordinator_token: str, synthesis_result: SynthesisResult
+    ) -> str | None:
         """Send the final synthesis result to the external channel.
 
         Returns the published message ID, or ``None`` if failed.

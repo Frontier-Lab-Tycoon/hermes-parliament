@@ -46,9 +46,7 @@ class TestSynthesizer:
     @pytest.fixture
     def history(self) -> list[TurnRecord]:
         return [
-            TurnRecord(
-                turn_uuid="t-0", seq=0, profile="user", role="user", content="topic"
-            ),
+            TurnRecord(turn_uuid="t-0", seq=0, profile="user", role="user", content="topic"),
             TurnRecord(
                 turn_uuid="t-1",
                 seq=1,
@@ -108,9 +106,7 @@ class TestSynthesizer:
         history: list[TurnRecord],
         successful_backend: MockBackend,
     ) -> None:
-        result = await Synthesizer(successful_backend).run(
-            "sid", "coordinator", history, schema
-        )
+        result = await Synthesizer(successful_backend).run("sid", "coordinator", history, schema)
 
         assert result.decision == "모놀리스"
         assert result.consensus_reached is True
@@ -123,9 +119,7 @@ class TestSynthesizer:
         history: list[TurnRecord],
         parse_failure_backend: MockBackend,
     ) -> None:
-        result = await Synthesizer(parse_failure_backend).run(
-            "sid", "coordinator", history, schema
-        )
+        result = await Synthesizer(parse_failure_backend).run("sid", "coordinator", history, schema)
 
         assert result.decision == "inconclusive"
         assert result.consensus_reached is True
@@ -145,9 +139,7 @@ class TestSynthesizer:
         assert result.consensus_reached is True
         assert len(backend.calls) == 0
 
-    async def test_invalid_synthesis_profile_raises(
-        self, schema: dict[str, Any]
-    ) -> None:
+    async def test_invalid_synthesis_profile_raises(self, schema: dict[str, Any]) -> None:
         with pytest.raises(ValueError, match="does not exist"):
             await Synthesizer(MockBackend([])).run(
                 "sid",
