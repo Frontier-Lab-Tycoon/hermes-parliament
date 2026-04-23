@@ -132,8 +132,8 @@ class TestE2EDiscordCommand:
         await _run_parliament_handler(
             interaction=interaction,
             topic="E2E Discord topic",
-            participant_1_id="123456789",
-            participant_2_id="987654321",
+            participant_1="123456789",
+            participant_2="987654321",
             max_turns=2,
             registry=registry,
             store=store,

@@ -3,24 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from parliament.topics.config import TopicConfig
 from parliament.models import TurnRecord
 from parliament.sessions.store import SessionStore
-
-
-def load_soul_md(profile: str) -> str | None:
-    """Load SOUL.md for a Hermes profile.
-
-    Returns ``None`` if the file does not exist. Callers should fall back to a
-    default identity prompt.
-    """
-    path = Path.home() / ".hermes" / "profiles" / profile / "SOUL.md"
-    if not path.exists():
-        return None
-    return path.read_text(encoding="utf-8")
 
 
 class Summarizer:
@@ -173,20 +160,9 @@ class ContextAssembler:
                     if not success:
                         self._apply_soft_limit(history, protected)
 
-        soul_md = load_soul_md(profile)
-        identity_text = (
-            soul_md
-            if soul_md is not None
-            else f'당신은 "{profile}"입니다. 기본 에이전트 identity입니다.'
-        )
-
         history_md = self._format_history(history)
 
-        prompt = f"""# identity
-당신은 "{profile}"입니다.
-{identity_text}
-
-# session context
+        prompt = f"""# session context
 주제: {topic.topic}
 
 # 이전 턴 내용

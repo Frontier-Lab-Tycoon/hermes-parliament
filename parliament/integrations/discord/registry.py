@@ -65,6 +65,12 @@ class DiscordRegistry:
             f"No profile found for hermes profile: {hermes_profile}"
         )
 
+    def list_profiles(self) -> list[HermesProfile]:
+        return sorted(
+            self._profiles.values(),
+            key=lambda profile: profile.hermes_profile,
+        )
+
 
 def load_registry(path: str) -> DiscordRegistry:
     raw_data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))

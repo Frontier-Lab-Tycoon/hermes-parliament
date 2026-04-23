@@ -28,8 +28,8 @@ def _default_bot_config_path() -> Path:
 async def _run_parliament_handler(
     interaction: discord.Interaction,
     topic: str,
-    participant_1_id: str,
-    participant_2_id: str,
+    participant_1: str,
+    participant_2: str,
     max_turns: int,
     registry: DiscordRegistry,
     store: SessionStore,
@@ -38,7 +38,7 @@ async def _run_parliament_handler(
 ) -> None:
     """Core logic for /parliament command handler."""
     # Validate: same participants
-    if participant_1_id == participant_2_id:
+    if participant_1 == participant_2:
         await interaction.response.send_message(
             "서로 다른 봇을 선택하세요", ephemeral=True
         )
@@ -53,8 +53,8 @@ async def _run_parliament_handler(
 
     # Lookup participant bot config.
     try:
-        profile_1 = registry.resolve_profile(participant_1_id)
-        profile_2 = registry.resolve_profile(participant_2_id)
+        profile_1 = registry.resolve_profile(participant_1)
+        profile_2 = registry.resolve_profile(participant_2)
     except KeyError:
         await interaction.response.send_message(
             "등록되지 않은 봇입니다", ephemeral=True
@@ -81,6 +81,7 @@ async def _run_parliament_handler(
 
     # Create session
     participants = [profile_1.hermes_profile, profile_2.hermes_profile]
+    config["participants"] = participants
     session_id = store.create_session(topic, participants, config)
 
     # Register in global index
@@ -91,7 +92,7 @@ async def _run_parliament_handler(
 
     # Respond ephemerally
     await interaction.response.send_message(
-        f"🟢 토론 시작! 참가자: <@{participant_1_id}>, <@{participant_2_id}> / 주제: {topic}",
+        f"🟢 토론 시작! 참가자: <@{profile_1.discord_user_id}>, <@{profile_2.discord_user_id}> / 주제: {topic}",
         ephemeral=True,
     )
 
@@ -139,19 +140,23 @@ class ParliamentBot(discord.Client):
         )
         @app_commands.describe(
             topic="Debate topic",
-            participant_1="First participant bot (mention)",
-            participant_2="Second participant bot (mention)",
-            max_turns="Maximum number of turns (default: 10)",
+            p1="First character bot",
+            p2="Second character bot",
+            turns="Maximum number of turns (default: 10)",
         )
         async def parliament_cmd(
             interaction: discord.Interaction,
             topic: str,
-            participant_1: discord.User,
-            participant_2: discord.User,
-            max_turns: int = 10,
+            p1: discord.User,
+            p2: discord.User,
+            turns: int = 10,
         ) -> None:
             await self._handle_parliament(
-                interaction, topic, participant_1, participant_2, max_turns
+                interaction,
+                topic,
+                str(p1.id),
+                str(p2.id),
+                turns,
             )
 
         self.tree.add_command(parliament_cmd)
@@ -160,8 +165,8 @@ class ParliamentBot(discord.Client):
         self,
         interaction: discord.Interaction,
         topic: str,
-        participant_1: discord.User,
-        participant_2: discord.User,
+        participant_1: str,
+        participant_2: str,
         max_turns: int,
     ) -> None:
         if self.registry is None:
@@ -173,8 +178,8 @@ class ParliamentBot(discord.Client):
         await _run_parliament_handler(
             interaction=interaction,
             topic=topic,
-            participant_1_id=str(participant_1.id),
-            participant_2_id=str(participant_2.id),
+            participant_1=participant_1,
+            participant_2=participant_2,
             max_turns=max_turns,
             registry=self.registry,
             store=self.store,

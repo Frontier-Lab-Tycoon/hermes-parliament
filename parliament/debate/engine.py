@@ -158,8 +158,13 @@ class DebateEngine:
 
         # -- Resolve ordering (participants) ------------------------------------
         ordering: list[str] = []
-        if registry and registry._profiles:
-            # Maintain deterministic order based on config participants if available
+        session = self.store.load_session(session_id)
+        session_participants = session.config.get("participants", [])
+
+        if session_participants:
+            ordering = list(session_participants)
+        elif registry and registry._profiles:
+            # Maintain deterministic order based on config participants if available.
             p1 = config.participant_1
             p2 = config.participant_2
             if p1 and p2:
@@ -167,9 +172,7 @@ class DebateEngine:
             else:
                 ordering = [p.hermes_profile for p in registry._profiles.values()]
         else:
-            session = self.store.load_session(session_id)
-            ordering = session.config.get("participants", [])
-            if not ordering and config.participant_1 and config.participant_2:
+            if config.participant_1 and config.participant_2:
                 ordering = [config.participant_1, config.participant_2]
 
         if not ordering:

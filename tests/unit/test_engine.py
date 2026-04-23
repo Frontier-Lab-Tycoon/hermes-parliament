@@ -118,3 +118,30 @@ class TestDebateEngine:
 
         session = store.load_session(sid)
         assert [turn.profile for turn in session.turns] == ["p1", "p2", "p1", "p2"]
+
+    async def test_run_prefers_session_participant_order_over_registry_order(
+        self, store: SessionStore, registry: DiscordRegistry
+    ) -> None:
+        sid = store.create_session(
+            "topic",
+            ["architect-angel", "architect-devil"],
+            {},
+        )
+        config = TopicConfig(
+            protocol=ProtocolConfig(
+                termination=TerminationConfig(max_turns=2, min_turns=2)
+            )
+        )
+
+        await DebateEngine(store, NoOpPublisher()).run(
+            sid,
+            config,
+            registry,
+            MockBackend(["angel response", "devil response"]),
+        )
+
+        session = store.load_session(sid)
+        assert [turn.profile for turn in session.turns] == [
+            "architect-angel",
+            "architect-devil",
+        ]

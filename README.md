@@ -28,26 +28,56 @@ Discord에서 `/parliament` 같은 custom slash command를 쓰려면 반드시 D
 | Character Bot 1 | 첫 번째 Hermes profile의 발언자로 메시지 발송 |
 | Character Bot 2 | 두 번째 Hermes profile의 발언자로 메시지 발송 |
 
-세 Bot을 모두 같은 Discord 서버에 초대해야 합니다. Discord Application/Bot 생성과 서버 초대는 Discord 권한 작업이라 Parliament가 대신 만들 수 없습니다. 다만 token만 준비되면 `bots.yaml` 생성, 참가자 Bot ID 조회, slash command sync는 `parliament start`가 자동으로 처리합니다.
+세 Bot을 모두 같은 Discord 서버에 초대해야 합니다. Discord Application/Bot 생성과 서버 초대는 Discord 권한 작업이라 Parliament가 대신 만들 수 없습니다.
+
+토큰은 환경 변수로 넘겨도 되고, `~/.parliament/bots.yaml`에 직접 적어도 됩니다. 환경 변수는 토큰을 설정 파일에 남기지 않기 위한 권장 방식일 뿐, slash command 사용을 위한 필수 입력은 아닙니다.
+
+```yaml
+# ~/.parliament/bots.yaml
+profiles:
+  architect-devil:
+    hermes_profile: "architect-devil"
+    discord_bot_token: "${DEVIL_BOT_TOKEN}"
+    discord_user_id: "123456789012345678"
+  architect-angel:
+    hermes_profile: "architect-angel"
+    discord_bot_token: "${ANGEL_BOT_TOKEN}"
+    discord_user_id: "234567890123456789"
+
+parliament_application:
+  bot_token: "${PARLIAMENT_BOT_TOKEN}"
+```
+
+`bots.yaml`을 직접 만들었다면 실행할 때는 Parliament Bot token만 있으면 됩니다.
+
+```bash
+export PARLIAMENT_BOT_TOKEN="..."
+
+parliament start
+```
+
+처음 설정을 자동 생성하고 싶다면 Character Bot token도 한 번만 알려주면 됩니다. `parliament start`가 각 Character Bot의 Discord user ID를 조회해서 `bots.yaml`을 만듭니다.
 
 ```bash
 export PARLIAMENT_BOT_TOKEN="..."
 export DEVIL_BOT_TOKEN="..."
 export ANGEL_BOT_TOKEN="..."
-
-# Hermes profile 이름과 Discord bot token 환경 변수를 매핑합니다.
 export PARLIAMENT_AGENTS="architect-devil=DEVIL_BOT_TOKEN,architect-angel=ANGEL_BOT_TOKEN"
 
 parliament start
 ```
 
-`parliament start`는 `~/.parliament/bots.yaml`이 없으면 자동으로 생성합니다. 이미 bot config가 있으면 그대로 사용합니다.
+이미 bot config가 있으면 `PARLIAMENT_AGENTS`, `DEVIL_BOT_TOKEN`, `ANGEL_BOT_TOKEN`은 필요하지 않습니다.
 
 Discord에서는 Parliament Bot과 Character Bot들을 초대한 뒤 바로 호출합니다.
 
 ```text
-/parliament topic:"초기 아키텍처는 모놀리스가 좋은가?" participant_1:@ArchitectDevil participant_2:@ArchitectAngel max_turns:10
+/parliament topic:"초기 아키텍처는 모놀리스가 좋은가?" p1:@ArchitectDevil p2:@ArchitectAngel turns:10
 ```
+
+`p1`, `p2`는 Discord의 Character Bot 멘션입니다. Parliament Bot은 멘션된 봇의 Discord user ID를 `bots.yaml`에서 찾고, 그 항목의 `hermes_profile`을 로컬 Hermes 호출에 사용합니다. 각 턴은 해당 Character Bot token으로 발송되어 캐릭터 봇이 직접 말한 것처럼 보입니다.
+
+Parliament는 토론자의 성격을 규정하지 않습니다. 캐릭터의 말투와 관점은 Hermes profile의 `SOUL.md` 등 Hermes agent 설정이 담당하고, Parliament는 선택된 봇을 어떤 Hermes profile로 호출할지만 매핑합니다.
 
 토론 중에는 각 턴마다 로컬에서 다음 형태로 Hermes agent가 호출됩니다.
 
@@ -142,5 +172,5 @@ uv run parliament start
 ## 설정
 
 - `~/.parliament/bots.yaml` — Parliament Bot과 Character Bot 매핑 설정
-- `~/.hermes/profiles/<name>/SOUL.md` — 각 에이전트의 정체성 파일
+- `~/.hermes/profiles/<name>/SOUL.md` — Hermes가 관리하는 각 에이전트의 정체성 파일
 - `topics/*.yaml` — 토론 주제 설정

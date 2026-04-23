@@ -66,8 +66,8 @@ class TestDiscordCommandHandler:
         await _run_parliament_handler(
             interaction=interaction,
             topic="Test topic",
-            participant_1_id="123456789",
-            participant_2_id="987654321",
+            participant_1="123456789",
+            participant_2="987654321",
             max_turns=10,
             registry=registry,
             store=store,
@@ -76,14 +76,34 @@ class TestDiscordCommandHandler:
 
         interaction.response.send_message.assert_called_once()
         assert index.list_sessions()[0]["topic"] == "Test topic"
+        session = store.load_session(index.list_sessions()[0]["session_id"])
+        assert session.config["participants"] == [
+            "architect-devil",
+            "architect-angel",
+        ]
         patched_engine_run.assert_called_once()
 
     @pytest.mark.parametrize(
-        ("participant_1_id", "participant_2_id", "max_turns", "message"),
+        ("participant_1", "participant_2", "max_turns", "message"),
         [
-            ("123456789", "000000000", 10, "등록되지 않은 봇입니다"),
-            ("123456789", "123456789", 10, "서로 다른 봇을 선택하세요"),
-            ("123456789", "987654321", 1, "max_turns는 2 이상이어야 합니다"),
+            (
+                "123456789",
+                "000000000",
+                10,
+                "등록되지 않은 봇입니다",
+            ),
+            (
+                "123456789",
+                "123456789",
+                10,
+                "서로 다른 봇을 선택하세요",
+            ),
+            (
+                "123456789",
+                "987654321",
+                1,
+                "max_turns는 2 이상이어야 합니다",
+            ),
         ],
     )
     async def test_invalid_command_inputs_return_ephemeral_error(
@@ -92,16 +112,16 @@ class TestDiscordCommandHandler:
         store: SessionStore,
         index: GlobalIndex,
         interaction: MockInteraction,
-        participant_1_id: str,
-        participant_2_id: str,
+        participant_1: str,
+        participant_2: str,
         max_turns: int,
         message: str,
     ) -> None:
         await _run_parliament_handler(
             interaction=interaction,
             topic="Test topic",
-            participant_1_id=participant_1_id,
-            participant_2_id=participant_2_id,
+            participant_1=participant_1,
+            participant_2=participant_2,
             max_turns=max_turns,
             registry=registry,
             store=store,

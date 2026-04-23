@@ -119,8 +119,9 @@ def _ensure_bot_config(path: Path, force: bool = False) -> Path:
     agents = os.environ.get("PARLIAMENT_AGENTS")
     if not agents:
         raise click.ClickException(
-            "PARLIAMENT_AGENTS is required when the bot config does not exist. "
-            "Example: architect-devil=DEVIL_BOT_TOKEN,architect-angel=ANGEL_BOT_TOKEN"
+            "Bot config does not exist. Create ~/.parliament/bots.yaml manually "
+            "or set PARLIAMENT_AGENTS once to auto-create it. Example: "
+            "architect-devil=DEVIL_BOT_TOKEN,architect-angel=ANGEL_BOT_TOKEN"
         )
 
     profiles: dict[str, dict[str, str]] = {}

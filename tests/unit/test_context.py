@@ -24,7 +24,7 @@ class TestContextAssembly:
         return SessionStore(base_dir=tmp_path / ".parliament")
 
     @pytest.fixture
-    def soul_home(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    def hermes_home(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
         fake_home = tmp_path / "home"
         profile_dir = fake_home / ".hermes" / "profiles" / "architect-devil"
         profile_dir.mkdir(parents=True)
@@ -68,8 +68,8 @@ class TestContextAssembly:
 
         return sid, history
 
-    async def test_prompt_includes_identity_topic_history_and_instruction(
-        self, soul_home: Path
+    async def test_prompt_includes_topic_history_and_instruction_only(
+        self, hermes_home: Path
     ) -> None:
         prompt = ContextAssembler().build_prompt(
             "architect-devil",
@@ -86,7 +86,8 @@ class TestContextAssembly:
             "반박하세요",
         )
 
-        assert "실용주의 아키텍트" in prompt
+        assert "실용주의 아키텍트" not in prompt
+        assert '당신은 "architect-devil"입니다.' not in prompt
         assert "모놀리스 vs 마이크로서비스" in prompt
         assert "운영 복잡도를 고려해야 합니다." in prompt
         assert "반박하세요" in prompt
