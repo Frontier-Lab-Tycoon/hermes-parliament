@@ -10,6 +10,8 @@ from typing import Any
 
 import yaml
 
+from parliament.hermes_index import HermesBotEntry, HermesIndex
+
 _ENV_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
 
@@ -41,45 +43,79 @@ class HermesProfile:
     avatar_url: str | None = None
 
 
+def _entry_to_profile(entry: HermesBotEntry) -> HermesProfile:
+    return HermesProfile(
+        hermes_profile=entry.hermes_profile,
+        discord_bot_token=entry.discord_bot_token,
+        discord_user_id=entry.discord_user_id,
+        discord_name=entry.discord_name,
+    )
+
+
 class DiscordRegistry:
     def __init__(
         self,
         profiles: dict[str, HermesProfile],
         coordinator: dict[str, Any],
+        hermes_index: HermesIndex | None = None,
     ) -> None:
         self._profiles = profiles
         self.coordinator = coordinator
+        self._hermes_index = hermes_index
 
     def resolve_profile(self, discord_user_id: str) -> HermesProfile:
-        if discord_user_id not in self._profiles:
-            raise KeyError(
-                f"No profile found for discord user id: {discord_user_id}"
-            )
-        return self._profiles[discord_user_id]
+        if discord_user_id in self._profiles:
+            return self._profiles[discord_user_id]
+        if self._hermes_index is not None:
+            try:
+                entry = self._hermes_index.resolve_by_user_id(discord_user_id)
+            except KeyError:
+                pass
+            else:
+                profile = _entry_to_profile(entry)
+                self._profiles[discord_user_id] = profile
+                return profile
+        raise KeyError(
+            f"No profile found for discord user id: {discord_user_id}"
+        )
 
     def resolve_by_hermes_profile(self, hermes_profile: str) -> HermesProfile:
         for profile in self._profiles.values():
             if profile.hermes_profile == hermes_profile:
+                return profile
+        if self._hermes_index is not None:
+            try:
+                entry = self._hermes_index.resolve_by_profile(hermes_profile)
+            except KeyError:
+                pass
+            else:
+                profile = _entry_to_profile(entry)
+                self._profiles[profile.discord_user_id] = profile
                 return profile
         raise KeyError(
             f"No profile found for hermes profile: {hermes_profile}"
         )
 
     def list_profiles(self) -> list[HermesProfile]:
-        return sorted(
-            self._profiles.values(),
-            key=lambda profile: profile.hermes_profile,
-        )
+        static = list(self._profiles.values())
+        if self._hermes_index is not None:
+            seen_ids = {p.discord_user_id for p in static}
+            for entry in self._hermes_index.list_profiles():
+                if entry.discord_user_id not in seen_ids:
+                    static.append(_entry_to_profile(entry))
+        return sorted(static, key=lambda profile: profile.hermes_profile)
 
 
-def load_registry(path: str) -> DiscordRegistry:
-    raw_data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+def load_registry(
+    path: str,
+    hermes_index: HermesIndex | None = None,
+) -> DiscordRegistry:
+    raw_data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
     data = _substitute_env_vars(raw_data)
 
-    raw_profiles = data.get("profiles", {})
+    raw_profiles = data.get("profiles") or {}
     coordinator = data.get("parliament_application") or data.get("coordinator", {})
 
-    # Validate Parliament application token if present.
     coord_token = coordinator.get("bot_token")
     if coord_token is not None and not coord_token:
         raise ValueError("Parliament bot token is empty after substitution")
@@ -98,10 +134,10 @@ def load_registry(path: str) -> DiscordRegistry:
                 f"Discord bot token for profile {name} is empty after substitution"
             )
 
-        # Validate Hermes profile path exists
-        profile_path = Path.home() / ".hermes" / "profiles" / hermes_profile
-        if not profile_path.exists():
-            raise FileNotFoundError(f"Hermes profile not found: {profile_path}")
+        if hermes_profile != "default":
+            profile_path = Path.home() / ".hermes" / "profiles" / hermes_profile
+            if not profile_path.exists():
+                raise FileNotFoundError(f"Hermes profile not found: {profile_path}")
 
         profiles[discord_user_id] = HermesProfile(
             hermes_profile=hermes_profile,
@@ -111,4 +147,11 @@ def load_registry(path: str) -> DiscordRegistry:
             avatar_url=info.get("avatar_url"),
         )
 
-    return DiscordRegistry(profiles=profiles, coordinator=coordinator)
+    if hermes_index is None:
+        hermes_index = HermesIndex()
+
+    return DiscordRegistry(
+        profiles=profiles,
+        coordinator=coordinator,
+        hermes_index=hermes_index,
+    )

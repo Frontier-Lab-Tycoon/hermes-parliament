@@ -38,7 +38,10 @@ def _parliament_bot_token() -> tuple[str | None, str]:
 def _fetch_discord_bot_identity(token: str) -> dict[str, str]:
     request = urllib.request.Request(
         "https://discord.com/api/v10/users/@me",
-        headers={"Authorization": f"Bot {token}"},
+        headers={
+            "Authorization": f"Bot {token}",
+            "User-Agent": f"DiscordBot (https://github.com/lablup/hermes-parliament, {__version__})",
+        },
     )
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
@@ -59,108 +62,39 @@ def _fetch_discord_bot_identity(token: str) -> dict[str, str]:
     return {"id": bot_id, "username": username or bot_id}
 
 
-def _resolve_token_reference(value: str) -> tuple[str, str]:
-    value = value.strip()
-    if value.startswith("${") and value.endswith("}"):
-        env_name = value[2:-1]
-    elif value in os.environ:
-        env_name = value
-    else:
-        env_name = ""
-
-    if env_name:
-        token = os.environ.get(env_name)
-        if not token:
-            raise click.ClickException(f"Environment variable {env_name} is empty")
-        return token, f"${{{env_name}}}"
-
-    return value, value
-
-
-def _parse_agent_specs(value: str) -> list[tuple[str, str, str]]:
-    specs: list[tuple[str, str, str]] = []
-    for raw_item in value.split(","):
-        item = raw_item.strip()
-        if not item:
-            continue
-
-        separator = "=" if "=" in item else ":"
-        if separator not in item:
-            raise click.ClickException(
-                "PARLIAMENT_AGENTS must use profile=TOKEN_ENV format"
-            )
-
-        profile, token_ref = item.split(separator, 1)
-        profile = profile.strip()
-        token_ref = token_ref.strip()
-        if not profile or not token_ref:
-            raise click.ClickException(
-                "PARLIAMENT_AGENTS entries must include both profile and token"
-            )
-
-        token, stored_token = _resolve_token_reference(token_ref)
-        specs.append((profile, token, stored_token))
-
-    if not specs:
-        raise click.ClickException("PARLIAMENT_AGENTS did not include any agents")
-    return specs
-
-
-def _ensure_bot_config(path: Path, force: bool = False) -> Path:
-    if path.exists() and not force:
-        return path
-
-    parliament_token, parliament_token_env = _parliament_bot_token()
-    if not parliament_token:
-        raise click.ClickException(
-            "PARLIAMENT_BOT_TOKEN is required to auto-create the bot config"
-        )
-
-    agents = os.environ.get("PARLIAMENT_AGENTS")
-    if not agents:
-        raise click.ClickException(
-            "Bot config does not exist. Create ~/.parliament/bots.yaml manually "
-            "or set PARLIAMENT_AGENTS once to auto-create it. Example: "
-            "architect-devil=DEVIL_BOT_TOKEN,architect-angel=ANGEL_BOT_TOKEN"
-        )
-
-    profiles: dict[str, dict[str, str]] = {}
-    for hermes_profile, token, stored_token in _parse_agent_specs(agents):
-        identity = _fetch_discord_bot_identity(token)
-        profiles[hermes_profile] = {
-            "hermes_profile": hermes_profile,
-            "discord_bot_token": stored_token,
-            "discord_user_id": identity["id"],
-            "discord_name": identity["username"],
-        }
-
-    parliament_application: dict[str, str] = {
-        "bot_token": f"${{{parliament_token_env}}}"
-    }
-    channel_id = os.environ.get("PARLIAMENT_CHANNEL_ID")
+def _write_coordinator_config(
+    path: Path,
+    bot_token: str,
+    channel_id: str | None = None,
+    identity: dict[str, str] | None = None,
+) -> None:
+    parliament_application: dict[str, str] = {"bot_token": bot_token}
     if channel_id:
         parliament_application["channel_id"] = channel_id
+    if identity:
+        parliament_application["discord_user_id"] = identity["id"]
+        parliament_application["discord_name"] = identity["username"]
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         yaml.safe_dump(
-            {
-                "profiles": profiles,
-                "parliament_application": parliament_application,
-            },
+            {"parliament_application": parliament_application},
             allow_unicode=True,
             sort_keys=False,
         ),
         encoding="utf-8",
     )
-    click.echo(f"Created bot config: {path}")
-    return path
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
 
 
 def _run_discord_bot(
     bot_config_path: Path,
     topic: str | None,
     sync_commands: bool,
+    sync_guild_id: str | None = None,
 ) -> None:
     from parliament.integrations.discord.bot import ParliamentBot
     from parliament.integrations.discord.registry import load_registry
@@ -176,18 +110,99 @@ def _run_discord_bot(
             "parliament_application.bot_token in the bot config."
         )
 
+    if not sync_guild_id:
+        sync_guild_id = os.environ.get("PARLIAMENT_GUILD_ID")
+
     bot = ParliamentBot(
         registry_path=str(bot_config_path),
         default_topic_path=topic,
         sync_commands=sync_commands,
+        sync_guild_id=sync_guild_id,
     )
     bot.run(token)
 
 
 @main.command()
+@click.option(
+    "--bot-config",
+    "bot_config",
+    default=None,
+    help="Path to bots.yaml (default: ~/.parliament/bots.yaml).",
+)
+@click.option(
+    "--coordinator-token",
+    default=None,
+    help="Parliament (coordinator) Discord bot token. If omitted, reads "
+    "PARLIAMENT_BOT_TOKEN or prompts interactively.",
+)
+@click.option(
+    "--channel-id",
+    default=None,
+    help="Optional default Discord channel ID for debates.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Overwrite an existing bots.yaml.",
+)
+@click.option(
+    "--no-verify",
+    is_flag=True,
+    help="Skip Discord /users/@me verification of the coordinator token.",
+)
+def init(
+    bot_config: str | None,
+    coordinator_token: str | None,
+    channel_id: str | None,
+    force: bool,
+    no_verify: bool,
+) -> None:
+    """Initialize Parliament: write coordinator config to bots.yaml.
+
+    Agents are resolved dynamically from Hermes profiles
+    (~/.hermes/profiles/<name>/.env) at /discuss time — no agent pre-registration
+    is required.
+    """
+    bot_config_path = Path(bot_config) if bot_config else _default_bot_config_path()
+    if bot_config_path.exists() and not force:
+        raise click.ClickException(
+            f"{bot_config_path} already exists. Re-run with --force to overwrite."
+        )
+
+    if not coordinator_token:
+        coordinator_token, _ = _parliament_bot_token()
+    if not coordinator_token:
+        coordinator_token = click.prompt(
+            "Parliament (coordinator) Discord bot token",
+            hide_input=True,
+        )
+    coordinator_token = (coordinator_token or "").strip()
+    if not coordinator_token:
+        raise click.ClickException("Coordinator token is required")
+
+    if not channel_id and os.environ.get("PARLIAMENT_CHANNEL_ID"):
+        channel_id = os.environ["PARLIAMENT_CHANNEL_ID"]
+
+    identity: dict[str, str] | None = None
+    if not no_verify:
+        identity = _fetch_discord_bot_identity(coordinator_token)
+        click.echo(
+            f"Verified coordinator bot: {identity['username']} ({identity['id']})"
+        )
+
+    _write_coordinator_config(
+        bot_config_path,
+        coordinator_token,
+        channel_id=channel_id,
+        identity=identity,
+    )
+    click.echo(f"Wrote {bot_config_path}")
+    click.echo("Next: `parliament start` to launch the bot.")
+
+
+@main.command()
 def list() -> None:
     """List active sessions."""
-    # Phase 0: no sessions yet
     click.echo("[]")
 
 
@@ -225,7 +240,7 @@ def run_bot(bot_config: str | None, topic: str | None, sync_commands: bool) -> N
     "--bot-config",
     "bot_config",
     default=None,
-    help="Path to bots.yaml. Auto-created when missing.",
+    help="Path to bots.yaml.",
 )
 @click.option(
     "--registry",
@@ -239,25 +254,31 @@ def run_bot(bot_config: str | None, topic: str | None, sync_commands: bool) -> N
     help="Path to default topic configuration file.",
 )
 @click.option(
-    "--force-bot-config",
-    is_flag=True,
-    help="Recreate the bot config from environment variables before starting.",
-)
-@click.option(
     "--sync-commands/--no-sync-commands",
     default=True,
     help="Sync Discord slash commands on startup.",
 )
+@click.option(
+    "--sync-guild",
+    "sync_guild_id",
+    default=None,
+    help="Sync slash commands to this guild ID instead of globally. "
+    "Guild-scoped commands propagate instantly; global commands can take "
+    "up to 1 hour. Can also be set via PARLIAMENT_GUILD_ID.",
+)
 def start(
     bot_config: str | None,
     topic: str | None,
-    force_bot_config: bool,
     sync_commands: bool,
+    sync_guild_id: str | None,
 ) -> None:
-    """Bootstrap configuration if needed, then start the Parliament Discord bot."""
+    """Start the Parliament Discord bot."""
     bot_config_path = Path(bot_config) if bot_config else _default_bot_config_path()
-    bot_config_path = _ensure_bot_config(bot_config_path, force=force_bot_config)
-    _run_discord_bot(bot_config_path, topic, sync_commands)
+    if not bot_config_path.exists():
+        raise click.ClickException(
+            f"{bot_config_path} not found. Run `parliament init` first."
+        )
+    _run_discord_bot(bot_config_path, topic, sync_commands, sync_guild_id)
 
 
 if __name__ == "__main__":

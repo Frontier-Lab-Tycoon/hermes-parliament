@@ -51,13 +51,24 @@ async def _run_parliament_handler(
         )
         return
 
-    # Lookup participant bot config.
+    # Lookup participant bot config (falls back to hermes profile scan).
+    missing: list[str] = []
+    profile_1 = None
+    profile_2 = None
     try:
         profile_1 = registry.resolve_profile(participant_1)
+    except KeyError:
+        missing.append(f"<@{participant_1}>")
+    try:
         profile_2 = registry.resolve_profile(participant_2)
     except KeyError:
+        missing.append(f"<@{participant_2}>")
+    if profile_1 is None or profile_2 is None:
         await interaction.response.send_message(
-            "등록되지 않은 봇입니다", ephemeral=True
+            f"등록되지 않은 봇입니다: {', '.join(missing)}. "
+            "해당 봇이 이 머신의 hermes 프로필(~/.hermes/profiles/<name>/.env)과 "
+            "연결되어 있어야 합니다.",
+            ephemeral=True,
         )
         return
 
@@ -120,6 +131,7 @@ class ParliamentBot(discord.Client):
         registry_path: str | None = None,
         default_topic_path: str | None = None,
         sync_commands: bool = True,
+        sync_guild_id: str | None = None,
         **kwargs: Any,
     ):
         intents = discord.Intents.default()
@@ -128,6 +140,7 @@ class ParliamentBot(discord.Client):
         self.registry_path = registry_path or str(_default_bot_config_path())
         self.default_topic_path = default_topic_path
         self.sync_commands = sync_commands
+        self.sync_guild_id = sync_guild_id
         self.registry: DiscordRegistry | None = None
         self.store = SessionStore()
         self.index = GlobalIndex()
@@ -161,6 +174,33 @@ class ParliamentBot(discord.Client):
 
         self.tree.add_command(parliament_cmd)
 
+        @app_commands.command(
+            name="discuss",
+            description="Start a debate with two mentioned bots (resolved from Hermes profiles)",
+        )
+        @app_commands.describe(
+            topic="Debate topic",
+            p1="First participant bot (mention)",
+            p2="Second participant bot (mention)",
+            turns="Maximum number of turns (default: 10)",
+        )
+        async def discuss_cmd(
+            interaction: discord.Interaction,
+            topic: str,
+            p1: discord.User,
+            p2: discord.User,
+            turns: int = 10,
+        ) -> None:
+            await self._handle_parliament(
+                interaction,
+                topic,
+                str(p1.id),
+                str(p2.id),
+                turns,
+            )
+
+        self.tree.add_command(discuss_cmd)
+
     async def _handle_parliament(
         self,
         interaction: discord.Interaction,
@@ -190,4 +230,9 @@ class ParliamentBot(discord.Client):
     async def setup_hook(self) -> None:
         self.registry = load_registry(self.registry_path)
         if self.sync_commands:
-            await self.tree.sync()
+            if self.sync_guild_id:
+                guild = discord.Object(id=int(self.sync_guild_id))
+                self.tree.copy_global_to(guild=guild)
+                await self.tree.sync(guild=guild)
+            else:
+                await self.tree.sync()
