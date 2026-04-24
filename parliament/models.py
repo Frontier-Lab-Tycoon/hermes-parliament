@@ -31,6 +31,7 @@ class TurnRecord(BaseModel):
     content: str
     structured: dict[str, Any] | None = None
     consensus_signal: str | None = None
+    discord_user_id: str | None = None
 
 
 class DeliveryEvent(BaseModel):

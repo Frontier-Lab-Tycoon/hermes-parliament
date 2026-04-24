@@ -112,7 +112,8 @@ class ContextAssembler:
                 display = f"[요약] {self._summaries[turn.turn_uuid]}"
             else:
                 display = turn.content
-            lines.append(f"- Turn {turn.seq} ({turn.profile}): {display}")
+            speaker = f"<@{turn.discord_user_id}>" if turn.discord_user_id else turn.profile
+            lines.append(f"- Turn {turn.seq} ({speaker}): {display}")
         if not lines:
             return "(없음)"
         return "\n".join(lines)
@@ -129,16 +130,11 @@ class ContextAssembler:
         threshold_70 = int(self.token_threshold * 0.7)
         threshold_80 = int(self.token_threshold * 0.8)
 
-        if (
-            history_tokens > threshold_70
-            and self.summarizer
-            and self.store
-            and self.session_id
-        ):
+        if history_tokens > threshold_70 and self.store and self.session_id:
             protected = self._protected_turns(profile, history)
             candidate = self._find_oldest_summarizable(history, protected)
 
-            if candidate:
+            if candidate and self.summarizer:
                 success = False
                 try:
                     summary = self.summarizer.summarize([candidate])
@@ -159,6 +155,9 @@ class ContextAssembler:
 
                     if not success:
                         self._apply_soft_limit(history, protected)
+            elif history_tokens > threshold_80:
+                # No summarizer available – simply drop the oldest non-protected turn.
+                self._apply_soft_limit(history, protected)
 
         history_md = self._format_history(history)
 

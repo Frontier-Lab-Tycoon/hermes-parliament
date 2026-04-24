@@ -96,7 +96,7 @@ class TestDebateEngine:
     async def test_timeout_turn_is_recorded_as_timeout(
         self, store: SessionStore
     ) -> None:
-        turn = await DebateEngine(store, NoOpPublisher()).run_turn(
+        turn = await DebateEngine(store, NoOpPublisher(), warmup_enabled=False).run_turn(
             "p1", "prompt", TimeoutBackend()
         )
         assert turn.content == "[TIMEOUT] 응답 없음"
@@ -109,7 +109,7 @@ class TestDebateEngine:
     ) -> None:
         sid, config = alternating_session
 
-        await DebateEngine(store, NoOpPublisher()).run(
+        await DebateEngine(store, NoOpPublisher(), warmup_enabled=False).run(
             sid,
             config,
             DiscordRegistry(profiles={}, coordinator={}),
@@ -133,7 +133,7 @@ class TestDebateEngine:
             )
         )
 
-        await DebateEngine(store, NoOpPublisher()).run(
+        await DebateEngine(store, NoOpPublisher(), warmup_enabled=False).run(
             sid,
             config,
             registry,

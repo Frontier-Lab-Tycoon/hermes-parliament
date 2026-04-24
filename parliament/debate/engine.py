@@ -7,6 +7,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import structlog
+
 from parliament.agents.base import AgentBackend, BackendTimeoutError
 from parliament.topics.config import ProtocolConfig, TopicConfig
 from parliament.debate.context import ContextAssembler
@@ -16,6 +18,8 @@ from parliament.integrations.base import Publisher
 from parliament.sessions.store import SessionStore
 from parliament.debate.synthesis import Synthesizer
 
+logger = structlog.get_logger()
+
 
 class DebateEngine:
     """Orchestrates a multi-agent turn-based debate."""
@@ -24,9 +28,11 @@ class DebateEngine:
         self,
         store: SessionStore | None = None,
         publisher: Publisher | None = None,
+        warmup_enabled: bool = True,
     ) -> None:
         self.store = store or SessionStore()
         self.publisher = publisher
+        self.warmup_enabled = warmup_enabled
 
     # ------------------------------------------------------------------
     # Static helpers
@@ -107,11 +113,20 @@ class DebateEngine:
         profile: str,
         prompt: str,
         backend: AgentBackend,
+        registry: DiscordRegistry | None = None,
     ) -> TurnRecord:
         """Invoke *backend* for *profile* with *prompt* and return a ``TurnRecord``."""
+        logger.info("run_turn_start", profile=profile, prompt_length=len(prompt))
         try:
             result: BackendResult = await backend.invoke(profile, prompt)
+            logger.info(
+                "run_turn_result",
+                profile=profile,
+                result_length=len(result.text),
+                code=result.code,
+            )
         except BackendTimeoutError:
+            logger.warning("run_turn_timeout", profile=profile)
             return TurnRecord(
                 turn_uuid=str(uuid.uuid4()),
                 seq=0,
@@ -122,6 +137,20 @@ class DebateEngine:
                 consensus_signal=None,
             )
         content, signal, structured = self.parse_output(result.text)
+        logger.info(
+            "run_turn_parsed",
+            profile=profile,
+            content_length=len(content),
+            has_signal=signal is not None,
+        )
+
+        discord_user_id = None
+        if registry is not None:
+            try:
+                discord_user_id = registry.resolve_by_hermes_profile(profile).discord_user_id
+            except Exception:
+                pass
+
         return TurnRecord(
             turn_uuid=str(uuid.uuid4()),
             seq=0,
@@ -130,6 +159,7 @@ class DebateEngine:
             content=content,
             structured=structured,
             consensus_signal=signal,
+            discord_user_id=discord_user_id,
         )
 
     # ------------------------------------------------------------------
@@ -193,18 +223,45 @@ class DebateEngine:
             for turn in self.store.get_unpublished_turns(session_id):
                 await self.publisher.send_turn(session_id, turn)
 
+        # -- Warm-up: invoke each participant briefly to avoid cold-start timeout -
+        if backend is not None and self.warmup_enabled:
+            for speaker in ordering:
+                try:
+                    logger.info("warmup_start", profile=speaker, session_id=session_id)
+                    await backend.invoke(
+                        speaker,
+                        f"'{config.topic}' 주제에 대한 토론이 곧 시작됩니다. 준비되셨나요? 짧게 '준비되었습니다'라고만 답변해주세요.",
+                        timeout=10,
+                    )
+                    logger.info("warmup_done", profile=speaker, session_id=session_id)
+                except Exception as exc:
+                    logger.warning("warmup_failed", profile=speaker, session_id=session_id, error=str(exc))
+
         # -- Turn loop ----------------------------------------------------------
         while True:
             speaker = self.determine_next_speaker(turns, ordering)
             prompt = self._build_prompt(session_id, speaker, turns, config)
-            turn = await self.run_turn(speaker, prompt, backend)
+            turn = await self.run_turn(speaker, prompt, backend, registry)
 
             # Assign deterministic seq / uuid for this turn
             turn = turn.model_copy(update={"seq": len(turns), "turn_uuid": f"t-{len(turns)}"})
             self.store.append_turn(session_id, turn)
             turns.append(turn)
+            logger.info(
+                "turn_recorded",
+                session_id=session_id,
+                turn_uuid=turn.turn_uuid,
+                seq=turn.seq,
+                profile=turn.profile,
+                content_length=len(turn.content),
+            )
 
             if self.publisher is not None:
+                logger.info(
+                    "publishing_turn",
+                    session_id=session_id,
+                    turn_uuid=turn.turn_uuid,
+                )
                 await self.publisher.send_turn(session_id, turn)
 
             if self.check_termination(turns, config.protocol):

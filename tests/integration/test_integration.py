@@ -156,7 +156,7 @@ class TestParliamentIntegration:
         config: TopicConfig,
         backend: MockBackend,
     ) -> None:
-        await DebateEngine(store, publisher).run(session_id, config, registry, backend)
+        await DebateEngine(store, publisher, warmup_enabled=False).run(session_id, config, registry, backend)
 
     async def test_happy_path_publishes_turns_and_final_result(
         self,

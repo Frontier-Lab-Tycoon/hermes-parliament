@@ -68,7 +68,7 @@ class TestE2EEngineFlow:
     def engine(
         self, store: SessionStore, registry: DiscordRegistry
     ) -> DebateEngine:
-        return DebateEngine(store, DiscordPublisher(registry, store))
+        return DebateEngine(store, DiscordPublisher(registry, store), warmup_enabled=False)
 
     @staticmethod
     def synthesis_json(decision: str = "go") -> str:
