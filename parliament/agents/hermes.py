@@ -58,7 +58,7 @@ class HermesBackend(AgentBackend):
         self._handles: dict[object, asyncio.subprocess.Process] = {}
 
     async def invoke(
-        self, profile: str, prompt: str, timeout: int = 10
+        self, profile: str, prompt: str, timeout: int = 60
     ) -> BackendResult:
         """Run ``hermes -p <profile> chat -q <prompt>``.
 
