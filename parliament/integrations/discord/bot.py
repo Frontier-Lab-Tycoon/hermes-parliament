@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import discord
+import structlog
 from discord import app_commands
 
 from parliament.topics.config import ProtocolConfig, TerminationConfig, TopicConfig, load_topic
@@ -14,6 +15,8 @@ from parliament.integrations.discord.registry import DiscordRegistry, load_regis
 from parliament.integrations.discord.publisher import DiscordPublisher
 from parliament.sessions.index import GlobalIndex
 from parliament.sessions.store import SessionStore
+
+logger = structlog.get_logger()
 
 
 def _default_bot_config_path() -> Path:
@@ -101,26 +104,58 @@ async def _run_parliament_handler(
     created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     index.register_session(session_id, "running", topic, created_at)
 
-    # Respond ephemerally
+    # Respond publicly in the channel
     await interaction.response.send_message(
         f"🟢 토론 시작! 참가자: <@{profile_1.discord_user_id}>, <@{profile_2.discord_user_id}> / 주제: {topic}",
-        ephemeral=True,
     )
+
+    # Resolve thread: reuse existing thread if already inside one,
+    # otherwise create a new thread on the command message.
+    thread_id: str | None = None
+    try:
+        if isinstance(interaction.channel, discord.Thread):
+            thread_id = str(interaction.channel.id)
+            logger.info("reusing_existing_thread", thread_id=thread_id)
+        elif interaction.channel is not None:
+            message = await interaction.original_response()
+            thread = await interaction.channel.create_thread(
+                name=f"토론: {topic[:50]}",
+                message=message,
+                auto_archive_duration=60,
+            )
+            thread_id = str(thread.id)
+            logger.info("created_new_thread", thread_id=thread_id)
+    except Exception as exc:
+        logger.warning("thread_creation_failed", error=str(exc))
+        thread_id = None
 
     # Start background task
     from parliament.debate.engine import DebateEngine
 
     publisher = None
-    channel_id = getattr(interaction, "channel_id", None)
-    if channel_id is not None or registry.coordinator.get("channel_id"):
+    if thread_id is not None or registry.coordinator.get("channel_id"):
         publisher = DiscordPublisher(
             registry,
             store,
-            channel_id=str(channel_id) if channel_id is not None else None,
+            channel_id=thread_id if thread_id is not None else None,
         )
+        logger.info(
+            "publisher_created",
+            channel_id=thread_id or registry.coordinator.get("channel_id"),
+            has_thread=thread_id is not None,
+        )
+    else:
+        logger.warning("no_publisher_created", reason="no_thread_and_no_coordinator_channel")
 
     engine = DebateEngine(store, publisher)
-    asyncio.create_task(engine.run(session_id, topic_config, registry))
+    task = asyncio.create_task(engine.run(session_id, topic_config, registry))
+
+    def _on_task_done(t: asyncio.Task) -> None:
+        exc = t.exception()
+        if exc is not None:
+            logger.error("engine_task_failed", session_id=session_id, error=str(exc), exc_info=exc)
+
+    task.add_done_callback(_on_task_done)
 
 
 class ParliamentBot(discord.Client):

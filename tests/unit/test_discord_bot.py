@@ -17,6 +17,9 @@ class MockInteraction:
     def __init__(self):
         self.response = MagicMock()
         self.response.send_message = AsyncMock()
+        self.original_response = AsyncMock(return_value=MagicMock())
+        self.channel = MagicMock()
+        self.channel.create_thread = AsyncMock(return_value=MagicMock(id=111222333))
 
 
 class TestDiscordCommandHandler:
