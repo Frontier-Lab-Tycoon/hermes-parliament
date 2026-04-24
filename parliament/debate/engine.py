@@ -231,7 +231,6 @@ class DebateEngine:
                     await backend.invoke(
                         speaker,
                         f"'{config.topic}' 주제에 대한 토론이 곧 시작됩니다. 준비되셨나요? 짧게 '준비되었습니다'라고만 답변해주세요.",
-                        timeout=10,
                     )
                     logger.info("warmup_done", profile=speaker, session_id=session_id)
                 except Exception as exc:
