@@ -8,7 +8,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from parliament.agents.base import BackendTimeoutError
-from parliament.agents.hermes import HermesBackend, HermesInvocationError
+from parliament.agents.hermes import (
+    HermesBackend,
+    HermesInvocationError,
+    clean_hermes_output,
+)
 
 
 class TestHermesBackend:
@@ -73,10 +77,11 @@ class TestHermesBackend:
             "chat",
             "-q",
             "안녕하세요",
+            "--quiet",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        assert result.text == "Hello world\n"
+        assert result.text == "Hello world"
         assert result.code == 0
 
     async def test_timeout_kills_process(self, timeout_subprocess: MagicMock) -> None:
@@ -94,3 +99,15 @@ class TestHermesBackend:
 
         assert result.code == -11
         assert result.error == "Segmentation fault"
+
+    async def test_clean_hermes_output_strips_ansi_and_session_id(self) -> None:
+        raw = "\x1b[32msession_id: abc-123\x1b[0m\nHello world"
+        assert clean_hermes_output(raw) == "Hello world"
+
+    async def test_clean_hermes_output_fallback_to_last_block(self) -> None:
+        # When only session metadata remains, fallback to the last non-empty block.
+        raw = "session_id: abc-123\n\nActual reply"
+        assert clean_hermes_output(raw) == "Actual reply"
+
+    async def test_clean_hermes_output_returns_empty_when_nothing_left(self) -> None:
+        assert clean_hermes_output("") == ""
