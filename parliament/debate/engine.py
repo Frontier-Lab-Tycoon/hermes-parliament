@@ -306,5 +306,5 @@ class DebateEngine:
             profile,
             config,
             list(turns),
-            "당신의 차례입니다. 2~3문장 내외로 핵심만 간결하게 발언하세요.",
+            "당신의 차례입니다. Discord 메시지 1개(2000자) 이내로 핵심 위주로 발언하세요.",
         )
