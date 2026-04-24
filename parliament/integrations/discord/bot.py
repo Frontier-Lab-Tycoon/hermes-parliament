@@ -86,7 +86,7 @@ async def _run_parliament_handler(
         topic_config = TopicConfig(**config)
     else:
         topic_config = TopicConfig(
-            session={"topic": topic, "max_turns": max_turns},
+            session={"topic": topic},
             protocol=ProtocolConfig(
                 termination=TerminationConfig(max_turns=max_turns, min_turns=2)
             ),
@@ -190,14 +190,14 @@ class ParliamentBot(discord.Client):
             topic="Debate topic",
             p1="First character bot",
             p2="Second character bot",
-            turns="Maximum number of turns (default: 10)",
+            turns="Maximum number of turns (default: 10, range: 2-50)",
         )
         async def parliament_cmd(
             interaction: discord.Interaction,
             topic: str,
             p1: discord.User,
             p2: discord.User,
-            turns: int = 10,
+            turns: app_commands.Range[int, 2, 50] = 10,
         ) -> None:
             await self._handle_parliament(
                 interaction,
@@ -217,14 +217,14 @@ class ParliamentBot(discord.Client):
             topic="Debate topic",
             p1="First participant bot (mention)",
             p2="Second participant bot (mention)",
-            turns="Maximum number of turns (default: 10)",
+            turns="Maximum number of turns (default: 10, range: 2-50)",
         )
         async def discuss_cmd(
             interaction: discord.Interaction,
             topic: str,
             p1: discord.User,
             p2: discord.User,
-            turns: int = 10,
+            turns: app_commands.Range[int, 2, 50] = 10,
         ) -> None:
             await self._handle_parliament(
                 interaction,
