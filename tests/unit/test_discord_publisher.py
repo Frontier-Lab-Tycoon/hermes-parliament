@@ -181,3 +181,48 @@ class TestDiscordPublisher:
         msg_id = await publisher.send_turn(session_id, already_sent)
 
         assert msg_id is None
+
+    async def test_split_discord_content_under_limit_is_single_chunk(self) -> None:
+        assert DiscordPublisher._split_discord_content("short") == ["short"]
+
+    async def test_split_discord_content_splits_on_newline(self) -> None:
+        text = "a\n" * 2000
+        chunks = DiscordPublisher._split_discord_content(text)
+        assert len(chunks) > 1
+        assert all(len(c) <= DiscordPublisher.DISCORD_MSG_LIMIT for c in chunks)
+
+    async def test_split_discord_content_splits_on_space_when_no_newline(self) -> None:
+        text = "word " * 2000
+        chunks = DiscordPublisher._split_discord_content(text)
+        assert len(chunks) > 1
+        assert all(len(c) <= DiscordPublisher.DISCORD_MSG_LIMIT for c in chunks)
+
+    async def test_split_discord_content_splits_hard_at_limit(self) -> None:
+        text = "x" * 5000
+        chunks = DiscordPublisher._split_discord_content(text)
+        assert len(chunks) >= 3
+        assert all(len(c) <= DiscordPublisher.DISCORD_MSG_LIMIT for c in chunks)
+
+    async def test_send_turn_splits_long_content_into_multiple_posts(
+        self,
+        publisher: DiscordPublisher,
+        store: SessionStore,
+        session_id: str,
+        discord_api,
+    ) -> None:
+        long_content = "A" * 2000 + "\n" + "B" * 2000
+        turn = TurnRecord(
+            turn_uuid="turn-long",
+            seq=0,
+            profile="architect-devil",
+            role="debater",
+            content=long_content,
+        )
+        store.append_turn(session_id, turn)
+
+        # Expect two POSTs, both returning 200.
+        discord_api.post(DISCORD_API_URL, status=200, payload={"id": "msg-1"})
+        discord_api.post(DISCORD_API_URL, status=200, payload={"id": "msg-2"})
+
+        msg_id = await publisher.send_turn(session_id, turn)
+        assert msg_id == "msg-1"
